@@ -52,6 +52,7 @@ model Subject {
   id        String   @id @default(uuid())
   name      String   @unique
   questions Question[]
+  chapters  Chapter[]
   assignments TeacherAssignment[]
 }
 
@@ -85,15 +86,39 @@ model Question {
   // Grouping
   subjectId String?
   subject   Subject? @relation(fields: [subjectId], references: [id])
+  chapterId String?
+  chapter   Chapter? @relation(fields: [chapterId], references: [id])
+  subtopicId String?
+  subtopic  Subtopic? @relation(fields: [subtopicId], references: [id])
+  
   courseId  String?
   course    Course?  @relation(fields: [courseId], references: [id])
   batchId   String?
   batch     Batch?   @relation(fields: [batchId], references: [id])
 
+  difficulty String   @default("Medium") // Beginner, Intermediate, Advanced
+
   // Legacy field support (optional, can remove if parsed into subject relation)
   legacySubject String? 
 
   tests     Test[]   @relation("TestQuestions")
+}
+
+model Chapter {
+  id        String   @id @default(uuid())
+  name      String
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  subtopics Subtopic[]
+  questions Question[]
+}
+
+model Subtopic {
+  id        String   @id @default(uuid())
+  name      String
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id])
+  questions Question[]
 }
 
 model Test {

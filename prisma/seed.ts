@@ -64,31 +64,61 @@ async function main() {
     console.log("✅ Metadata Seeded")
 
     // 4. Questions
-    // Helper to create dummy questions
-    const createQuestions = async (subjectName: string, count: number) => {
+    // 4. Questions Hierarchy & Content
+    const difficultyLevels = ["BEGINNER", "INTERMEDIATE", "ADVANCED"]
+
+    // Helper to create hierarchy and questions
+    const seedSubjectContent = async (subjectName: string) => {
         const subject = subjects.find(s => s.name === subjectName)
         if (!subject) return
 
-        const questions = []
-        for (let i = 1; i <= count; i++) {
-            questions.push({
-                text: `${subjectName} Question ${i}: What is the fundamental concept of... [Random Content]?`,
-                options: JSON.stringify(["Option A", "Option B", "Option C", "Option D"]),
-                correct: "Option A", // Simple default for testing
-                courseId: course.id,
-                subjectId: subject.id,
-                // Randomly assign difficulty if schema supported it, currently it's strict
+        // Create Chapters
+        const chapters = []
+        for (let c = 1; c <= 3; c++) {
+            const chapter = await prisma.chapter.create({
+                data: {
+                    name: `${subjectName} Chapter ${c}`,
+                    subjectId: subject.id
+                }
             })
+            chapters.push(chapter)
         }
-        await prisma.question.createMany({ data: questions })
-        console.log(`   - Added ${count} questions for ${subjectName}`)
+
+        // Create Subtopics & Questions
+        for (const chapter of chapters) {
+            for (let s = 1; s <= 2; s++) {
+                const subtopic = await prisma.subtopic.create({
+                    data: {
+                        name: `${chapter.name} - Topic ${s}`,
+                        chapterId: chapter.id
+                    }
+                })
+
+                const questions = []
+                for (let q = 1; q <= 5; q++) {
+                    const diff = difficultyLevels[Math.floor(Math.random() * difficultyLevels.length)]
+                    questions.push({
+                        text: `[${diff}] ${subtopic.name} Q${q}: What is... ?`,
+                        options: JSON.stringify(["Option A", "Option B", "Option C", "Option D"]),
+                        correct: "Option A",
+                        courseId: course.id,
+                        subjectId: subject.id,
+                        chapterId: chapter.id,
+                        subtopicId: subtopic.id,
+                        difficulty: diff
+                    })
+                }
+                await prisma.question.createMany({ data: questions })
+            }
+        }
+        console.log(`   - Seeded content for ${subjectName}`)
     }
 
-    await createQuestions("Physics", 30)
-    await createQuestions("Chemistry", 30)
-    await createQuestions("Mathematics", 30)
+    await seedSubjectContent("Physics")
+    await seedSubjectContent("Chemistry")
+    await seedSubjectContent("Mathematics")
 
-    console.log("✅ Questions Seeded (90 Total)")
+    console.log("✅ Questions & Hierarchy Seeded")
 
     // 5. Ranking Demo Data
     console.log("📊 Seeding Ranking Demo Data...")

@@ -48,8 +48,10 @@ export async function GET() {
 
         // 3. Ensure Metadata Exists
         const subjectsData = ["Physics", "Chemistry", "Mathematics", "Biology"]
+        const subjects: any[] = []
         for (const name of subjectsData) {
-            await db.subject.upsert({ where: { name }, update: {}, create: { name } })
+            const subject = await db.subject.upsert({ where: { name }, update: {}, create: { name } })
+            subjects.push(subject)
         }
 
         const course = await db.course.upsert({
@@ -60,6 +62,61 @@ export async function GET() {
                 batches: { create: [{ name: "Morning" }] }
             }
         })
+
+        // 4. Questions with Hierarchy
+        const existingQ = await db.question.findFirst()
+        if (!existingQ) {
+            const difficultyLevels = ["BEGINNER", "INTERMEDIATE", "ADVANCED"]
+
+            const seedSubjectContent = async (subjectName: string) => {
+                const subject = subjects.find(s => s.name === subjectName)
+                if (!subject) return
+
+                // Create Chapters
+                const chapters = []
+                for (let c = 1; c <= 3; c++) {
+                    const chapter = await db.chapter.create({
+                        data: {
+                            name: `${subjectName} Chapter ${c}`,
+                            subjectId: subject.id
+                        }
+                    })
+                    chapters.push(chapter)
+                }
+
+                // Create Subtopics & Questions
+                for (const chapter of chapters) {
+                    for (let s = 1; s <= 2; s++) {
+                        const subtopic = await db.subtopic.create({
+                            data: {
+                                name: `${chapter.name} - Topic ${s}`,
+                                chapterId: chapter.id
+                            }
+                        })
+
+                        const questions = []
+                        for (let q = 1; q <= 5; q++) {
+                            const diff = difficultyLevels[Math.floor(Math.random() * difficultyLevels.length)]
+                            questions.push({
+                                text: `[${diff}] ${subtopic.name} Q${q}: Content...`,
+                                options: JSON.stringify(["Option A", "Option B", "Option C", "Option D"]),
+                                correct: "0",
+                                courseId: course.id,
+                                subjectId: subject.id,
+                                chapterId: chapter.id,
+                                subtopicId: subtopic.id,
+                                difficulty: diff
+                            })
+                        }
+                        await db.question.createMany({ data: questions })
+                    }
+                }
+            }
+
+            await seedSubjectContent("Physics")
+            await seedSubjectContent("Chemistry")
+            await seedSubjectContent("Mathematics")
+        }
 
         return NextResponse.json({
             status: "Success",
