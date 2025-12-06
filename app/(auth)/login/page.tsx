@@ -30,13 +30,14 @@ export default function LoginPage() {
             })
 
             if (res?.error) {
-                setError("Invalid email or password.")
+                console.error("Login Failed:", res.error)
+                setError("Login failed. Check console for details or verify credentials.")
                 setLoading(false)
                 return
             }
 
             if (!res?.ok) {
-                setError("Server error. Please try again.")
+                setError(`Server Error (${res?.status}). Please try again later.`)
                 setLoading(false)
                 return
             }

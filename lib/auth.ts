@@ -20,25 +20,31 @@ export const authOptions: NextAuthOptions = {
                 password: { label: "Password", type: "password" }
             },
             async authorize(credentials) {
-                if (!credentials?.email || !credentials?.password) return null
+                console.log("[AUTH_DEBUG] Attempting login for:", credentials?.email)
 
-                // Explicitly select password to ensure it's returned
+                if (!credentials?.email || !credentials?.password) {
+                    console.log("[AUTH_DEBUG] Missing credentials")
+                    return null
+                }
+
                 const user = await db.user.findUnique({
                     where: { email: credentials.email },
-                    select: {
-                        id: true,
-                        email: true,
-                        password: true,
-                        name: true,
-                        role: true,
-                    }
                 })
 
-                if (!user) return null
+                if (!user) {
+                    console.log("[AUTH_DEBUG] User not found:", credentials.email)
+                    return null
+                }
 
+                console.log("[AUTH_DEBUG] User found, verifying password...")
                 const isValid = await compare(credentials.password, user.password)
 
-                if (!isValid) return null
+                if (!isValid) {
+                    console.log("[AUTH_DEBUG] Password invalid for user:", credentials.email)
+                    return null
+                }
+
+                console.log("[AUTH_DEBUG] Login successful for:", credentials.email)
 
                 return {
                     id: user.id,
