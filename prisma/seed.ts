@@ -39,7 +39,7 @@ async function main() {
 
     // 3. Metadata
     const subjectsData = ["Physics", "Chemistry", "Mathematics", "Biology"]
-    const subjects = []
+    const subjects: any[] = []
     for (const name of subjectsData) {
         const s = await prisma.subject.upsert({
             where: { name },

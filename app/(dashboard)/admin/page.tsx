@@ -17,7 +17,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Users, GraduationCap, BookOpen, PenTool } from "lucide-react"
 
-export default function AdminDashboard() {
+import { Suspense } from "react"
+
+function AdminDashboardContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const currentTab = searchParams.get("tab") || "overview"
@@ -37,11 +39,6 @@ export default function AdminDashboard() {
                 </div>
                 <LogoutButton />
             </div>
-
-            {/* Stats Overview - Only show on overview tab or always? Let's keep it always visible for 'dashboard' feel but maybe cleaner to only show on 'overview' or have 'overview' be the default tab that DOES NOT show the management lists. 
-               
-               Let's make 'Overview' explicit.
-            */}
 
             {currentTab === "overview" && (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-4">
@@ -160,6 +157,14 @@ export default function AdminDashboard() {
                 </TabsContent>
             </Tabs>
         </div>
+    )
+}
+
+export default function AdminDashboard() {
+    return (
+        <Suspense fallback={<div className="p-8">Loading dashboard...</div>}>
+            <AdminDashboardContent />
+        </Suspense>
     )
 }
 

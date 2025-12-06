@@ -6,7 +6,7 @@ import { db } from "@/lib/db"
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions)
-        if (!session?.user?.id) return new NextResponse("Unauthorized", { status: 401 })
+        if (!session?.user || !(session.user as any).id) return new NextResponse("Unauthorized", { status: 401 })
 
         const { testId, responses } = await req.json() // responses: { questionId: optionIndex }
 
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         const result = await db.testResult.create({
             data: {
                 testId,
-                userId: session.user.id,
+                userId: (session.user as any).id,
                 score,
                 total,
                 answers: JSON.stringify(responses), // Storing detailed answers for review

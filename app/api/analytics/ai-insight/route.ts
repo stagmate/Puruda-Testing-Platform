@@ -9,11 +9,11 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!)
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions)
-        if (!session) return new NextResponse("Unauthorized", { status: 401 })
+        if (!session || !session.user) return new NextResponse("Unauthorized", { status: 401 })
 
         // Optional: Admin/Teacher can request for a specific student
         const { userId } = await req.json().catch(() => ({}))
-        const targetUserId = (session.user.role === "ADMIN" || session.user.role === "TEACHER") && userId ? userId : session.user.id
+        const targetUserId = ((session.user as any).role === "ADMIN" || (session.user as any).role === "TEACHER") && userId ? userId : (session.user as any).id
 
         // Fetch User Performance Data
         // 1. Last 5 Test Results with Test details

@@ -10,7 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BookOpen, PenTool } from "lucide-react"
 import { CreateReviewDialog } from "@/components/create-review-dialog"
 
-export default function TeacherDashboard() {
+import { Suspense } from "react"
+
+function TeacherDashboardContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const currentTab = searchParams.get("tab") || "overview"
@@ -91,5 +93,13 @@ export default function TeacherDashboard() {
                 </TabsContent>
             </Tabs>
         </div>
+    )
+}
+
+export default function TeacherDashboard() {
+    return (
+        <Suspense fallback={<div className="p-8">Loading dashboard...</div>}>
+            <TeacherDashboardContent />
+        </Suspense>
     )
 }

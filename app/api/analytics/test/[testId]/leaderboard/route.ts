@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 
-export async function GET(req: Request, { params }: { params: { testId: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ testId: string }> }) {
     try {
-        const { testId } = params
+        const { testId } = await params
 
         const results = await db.testResult.findMany({
             where: { testId },
