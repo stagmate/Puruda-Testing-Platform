@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!)
-
 const SYSTEM_PROMPT = `
 You are the AI Support Assistant for "Puruda Classes Testing Platform".
 Your role is to help Admins, Teachers, and Students use the platform.
@@ -23,9 +21,12 @@ Keep answers concise and helpful.
 export async function POST(req: Request) {
     try {
         if (!process.env.GOOGLE_API_KEY) {
-            return NextResponse.json({ response: "Config Error: GOOGLE_API_KEY is missing in server environment." }, { status: 500 })
+            return NextResponse.json({
+                response: "Config Error: GOOGLE_API_KEY is missing in server environment. Please add it in Vercel Settings."
+            }, { status: 500 })
         }
 
+        const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY)
         const { message, history = [] } = await req.json()
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
 
@@ -44,8 +45,12 @@ export async function POST(req: Request) {
     } catch (error: any) {
         console.error("Chat Error Details:", error)
         console.error("API Key Status:", process.env.GOOGLE_API_KEY ? "Present" : "Missing")
+
+        let errorMsg = "I'm having trouble connecting to my brain right now."
+        if (error.message?.includes("API key")) errorMsg = "Google API Key is invalid or expired."
+
         return NextResponse.json({
-            response: `I'm having trouble connecting to my brain right now. Error: ${error.message || "Unknown"}. Please check API Key.`
+            response: `${errorMsg} (Error: ${error.message || "Unknown"})`
         }, { status: 500 })
     }
 }
