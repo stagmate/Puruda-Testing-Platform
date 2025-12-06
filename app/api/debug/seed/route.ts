@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { hash } from "bcryptjs"
+import { Difficulty, QuestionType } from "@prisma/client"
 
 export async function GET() {
     try {
@@ -63,10 +64,12 @@ export async function GET() {
             }
         })
 
+        // ... inside the function ...
+
         // 4. Questions with Hierarchy
         const existingQ = await db.question.findFirst()
         if (!existingQ) {
-            const difficultyLevels = ["BEGINNER", "INTERMEDIATE", "ADVANCED"]
+            const difficultyLevels = [Difficulty.BEGINNER, Difficulty.INTERMEDIATE, Difficulty.ADVANCED]
 
             const seedSubjectContent = async (subjectName: string) => {
                 const subject = subjects.find(s => s.name === subjectName)
@@ -94,7 +97,7 @@ export async function GET() {
                             }
                         })
 
-                        const questions = []
+                        const questions: any[] = []
                         for (let q = 1; q <= 5; q++) {
                             const diff = difficultyLevels[Math.floor(Math.random() * difficultyLevels.length)]
                             questions.push({
@@ -105,7 +108,8 @@ export async function GET() {
                                 subjectId: subject.id,
                                 chapterId: chapter.id,
                                 subtopicId: subtopic.id,
-                                difficulty: diff
+                                difficulty: diff,
+                                type: QuestionType.SINGLE
                             })
                         }
                         await db.question.createMany({ data: questions })
