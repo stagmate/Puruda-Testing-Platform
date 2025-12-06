@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      String   @default("STUDENT") // ADMIN, TEACHER, STUDENT
+  createdAt DateTime @default(now())
+  
+  // Student Relations
+  batches   Batch[]  @relation("StudentBatches")
+  results   TestResult[]
+
+  // Teacher Relations
+  assignments TeacherAssignment[]
+  announcements Announcement[]
+  writtenReviews PerformanceReview[] @relation("WrittenReviews")
+
+  // Student Review Rec
+  studentReviews PerformanceReview[] @relation("StudentReviews")
+}
+
+model Course {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  batches   Batch[]
+  tests     Test[]
+  questions Question[]
+}
+
+model Batch {
+  id        String   @id @default(uuid())
+  name      String
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id])
+  
+  students  User[]   @relation("StudentBatches")
+  assignments TeacherAssignment[]
+  questions Question[]
+  tests     Test[]   @relation("BatchTests")
+}
+
+model Subject {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  questions Question[]
+  assignments TeacherAssignment[]
+}
+
+model TeacherAssignment {
+  id        String   @id @default(uuid())
+  teacherId String
+  teacher   User     @relation(fields: [teacherId], references: [id])
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id])
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+
+  @@unique([teacherId, batchId, subjectId])
+}
+
+model Question {
+  id        String   @id @default(uuid())
+  text      String
+  imageUrl  String?  // URL to question image
+  options   String   // JSON string of options text
+  
+  // Option Images (optional)
+  optionAImageUrl String?
+  optionBImageUrl String?
+  optionCImageUrl String?
+  optionDImageUrl String?
+
+  correct   String
+  createdAt DateTime @default(now())
+  
+  // Grouping
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+  courseId  String?
+  course    Course?  @relation(fields: [courseId], references: [id])
+  batchId   String?
+  batch     Batch?   @relation(fields: [batchId], references: [id])
+
+  // Legacy field support (optional, can remove if parsed into subject relation)
+  legacySubject String? 
+
+  tests     Test[]   @relation("TestQuestions")
+}
+
+model Test {
+  id        String   @id @default(uuid())
+  title     String
+  type      String   @default("MIXED") // SUBJECT, MIXED, MOCK
+  duration  Int
+  createdAt DateTime @default(now())
+  
+  // Scheduling & Results
+  startTime   DateTime? // If set, test is only accessible after this time
+  endTime     DateTime? // If set, test must be submitted by this time
+  resultMode  String    @default("INSTANT") // INSTANT, MANUAL
+  isPublished Boolean   @default(true) // If false, hidden from students entirely (draft)
+  showRank    Boolean   @default(false) // If true, students see their Rank
+  
+  courseId  String?
+  course    Course?  @relation(fields: [courseId], references: [id])
+  
+  batches   Batch[]  @relation("BatchTests")
+  
+  questions Question[] @relation("TestQuestions")
+  results   TestResult[]
+  reviews   PerformanceReview[]
+}
+
+model TestResult {
+  id        String   @id @default(cuid())
+  testId      String
+  test        Test     @relation(fields: [testId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  score       Int
+  total       Int
+  answers     String?  // JSON string of user answers
+  completedAt DateTime @default(now())
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  active    Boolean  @default(true)
+}
+
+model PerformanceReview {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation("StudentReviews", fields: [studentId], references: [id])
+  teacherId String
+  teacher   User     @relation("WrittenReviews", fields: [teacherId], references: [id])
+
+  testId    String?
+  test      Test?    @relation(fields: [testId], references: [id])
+  subjectId String?
+  batchId   String?
+
+  feedback  String
+  rating    Int?
+  status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt DateTime @default(now())
+}
