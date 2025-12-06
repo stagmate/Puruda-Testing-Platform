@@ -113,117 +113,118 @@ async function main() {
             }
             console.log(`   - Seeded content for ${subjectName}`)
         }
-
-        await seedSubjectContent("Physics")
-        await seedSubjectContent("Chemistry")
-        await seedSubjectContent("Mathematics")
-
-        console.log("✅ Questions & Hierarchy Seeded")
-
-        // 5. Ranking Demo Data
-        console.log("📊 Seeding Ranking Demo Data...")
-
-        // Create 5 Demo Students
-        const demoStudents = []
-        for (let i = 1; i <= 5; i++) {
-            const s = await prisma.user.upsert({
-                where: { email: `student${i}@puruda.com` },
-                update: { password },
-                create: { email: `student${i}@puruda.com`, name: `Demo Student ${i}`, role: "STUDENT", password }
-            })
-            demoStudents.push(s)
-        }
-
-        // Create a Demo Test
-        // Fetch some physics questions to link
-        const physicsQs = await prisma.question.findMany({ where: { subject: { name: "Physics" } }, take: 5 })
-
-        // Need a batch
-        const batch = course.batches[0]
-
-        const demoTest = await prisma.test.create({
-            data: {
-                title: "Physics Weekly Ranking Test",
-                duration: 60,
-                type: "SUBJECT",
-                courseId: course.id,
-                startTime: new Date(Date.now() - 86400000), // Started yesterday
-                endTime: new Date(Date.now() + 86400000), // Ends tomorrow
-                isPublished: true,
-                showRank: true, // Enable ranking visibility
-                batches: { connect: { id: batch.id } },
-                questions: { connect: physicsQs.map(q => ({ id: q.id })) }
-            }
-        })
-
-        // Create Results (Scenario: Score Tie Broken by Time)
-        // Total Marks: 5 Qs * 4 Marks (assumed) = 20? Schema doesn't have marks per Q yet, let's assume 1 per Q = 5 total.
-        // Let's assume the UI/Logic treats each Q as 1 mark for now unless updated.
-
-        // Student 3: 5/5, 5 mins -> Rank 1
-        await prisma.testResult.create({
-            data: {
-                testId: demoTest.id,
-                userId: demoStudents[2].id, // Student 3
-                score: 5,
-                total: 5,
-                completedAt: new Date(Date.now() - 3600000), // 1 hour ago
-            }
-        })
-
-        // Student 2: 5/5, 15 mins -> Rank 2
-        await prisma.testResult.create({
-            data: {
-                testId: demoTest.id,
-                userId: demoStudents[1].id, // Student 2
-                score: 5,
-                total: 5,
-                completedAt: new Date(Date.now() - 1800000), // 30 mins ago (Finished LATER than Student 3)
-            }
-        })
-
-        // Student 1: 4/5 -> Rank 3
-        await prisma.testResult.create({
-            data: {
-                testId: demoTest.id,
-                userId: demoStudents[0].id, // Student 1
-                score: 4,
-                total: 5,
-                completedAt: new Date(),
-            }
-        })
-
-        // Student 4: 2/5 -> Rank 4
-        await prisma.testResult.create({
-            data: {
-                testId: demoTest.id,
-                userId: demoStudents[3].id, // Student 4
-                score: 2,
-                total: 5,
-                completedAt: new Date(),
-            }
-        })
-
-        // Student 5: 0/5 -> Rank 5
-        await prisma.testResult.create({
-            data: {
-                testId: demoTest.id,
-                userId: demoStudents[4].id, // Student 5
-                score: 0,
-                total: 5,
-                completedAt: new Date(),
-            }
-        })
-
-        console.log("✅ Ranking Demo Data Seeded!")
     }
 
-    main()
-        .then(async () => {
-            await prisma.$disconnect()
+    await seedSubjectContent("Physics")
+    await seedSubjectContent("Chemistry")
+    await seedSubjectContent("Mathematics")
+
+    console.log("✅ Questions & Hierarchy Seeded")
+
+    // 5. Ranking Demo Data
+    console.log("📊 Seeding Ranking Demo Data...")
+
+    // Create 5 Demo Students
+    const demoStudents = []
+    for (let i = 1; i <= 5; i++) {
+        const s = await prisma.user.upsert({
+            where: { email: `student${i}@puruda.com` },
+            update: { password },
+            create: { email: `student${i}@puruda.com`, name: `Demo Student ${i}`, role: "STUDENT", password }
         })
-        .catch(async (e) => {
-            console.error(e)
-            await prisma.$disconnect()
-            process.exit(1)
-        })
+        demoStudents.push(s)
+    }
+
+    // Create a Demo Test
+    // Fetch some physics questions to link
+    const physicsQs = await prisma.question.findMany({ where: { subject: { name: "Physics" } }, take: 5 })
+
+    // Need a batch
+    const batch = course.batches[0]
+
+    const demoTest = await prisma.test.create({
+        data: {
+            title: "Physics Weekly Ranking Test",
+            duration: 60,
+            type: "SUBJECT",
+            courseId: course.id,
+            startTime: new Date(Date.now() - 86400000), // Started yesterday
+            endTime: new Date(Date.now() + 86400000), // Ends tomorrow
+            isPublished: true,
+            showRank: true, // Enable ranking visibility
+            batches: { connect: { id: batch.id } },
+            questions: { connect: physicsQs.map(q => ({ id: q.id })) }
+        }
+    })
+
+    // Create Results (Scenario: Score Tie Broken by Time)
+    // Total Marks: 5 Qs * 4 Marks (assumed) = 20? Schema doesn't have marks per Q yet, let's assume 1 per Q = 5 total.
+    // Let's assume the UI/Logic treats each Q as 1 mark for now unless updated.
+
+    // Student 3: 5/5, 5 mins -> Rank 1
+    await prisma.testResult.create({
+        data: {
+            testId: demoTest.id,
+            userId: demoStudents[2].id, // Student 3
+            score: 5,
+            total: 5,
+            completedAt: new Date(Date.now() - 3600000), // 1 hour ago
+        }
+    })
+
+    // Student 2: 5/5, 15 mins -> Rank 2
+    await prisma.testResult.create({
+        data: {
+            testId: demoTest.id,
+            userId: demoStudents[1].id, // Student 2
+            score: 5,
+            total: 5,
+            completedAt: new Date(Date.now() - 1800000), // 30 mins ago (Finished LATER than Student 3)
+        }
+    })
+
+    // Student 1: 4/5 -> Rank 3
+    await prisma.testResult.create({
+        data: {
+            testId: demoTest.id,
+            userId: demoStudents[0].id, // Student 1
+            score: 4,
+            total: 5,
+            completedAt: new Date(),
+        }
+    })
+
+    // Student 4: 2/5 -> Rank 4
+    await prisma.testResult.create({
+        data: {
+            testId: demoTest.id,
+            userId: demoStudents[3].id, // Student 4
+            score: 2,
+            total: 5,
+            completedAt: new Date(),
+        }
+    })
+
+    // Student 5: 0/5 -> Rank 5
+    await prisma.testResult.create({
+        data: {
+            testId: demoTest.id,
+            userId: demoStudents[4].id, // Student 5
+            score: 0,
+            total: 5,
+            completedAt: new Date(),
+        }
+    })
+
+    console.log("✅ Ranking Demo Data Seeded!")
+}
+
+main()
+    .then(async () => {
+        await prisma.$disconnect()
+    })
+    .catch(async (e) => {
+        console.error(e)
+        await prisma.$disconnect()
+        process.exit(1)
+    })
