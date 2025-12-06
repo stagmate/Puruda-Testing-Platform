@@ -14,3 +14,17 @@ export async function GET(req: Request) {
 
     return NextResponse.json(chapters)
 }
+
+export async function POST(req: Request) {
+    try {
+        const { name, subjectId } = await req.json()
+        if (!name || !subjectId) return new NextResponse("Missing fields", { status: 400 })
+
+        const chapter = await db.chapter.create({
+            data: { name, subjectId }
+        })
+        return NextResponse.json(chapter)
+    } catch (error) {
+        return new NextResponse("Error creating chapter", { status: 500 })
+    }
+}

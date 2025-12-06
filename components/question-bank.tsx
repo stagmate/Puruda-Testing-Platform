@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 
 export function QuestionBankManagement() {
     const [courses, setCourses] = useState<any[]>([])
@@ -192,6 +193,122 @@ export function QuestionBankManagement() {
         }
     }
 
+    // ... (existing state) ...
+    const [isCreating, setIsCreating] = useState(false)
+    const [creationType, setCreationType] = useState<"SUBJECT" | "CHAPTER" | "SUBTOPIC" | null>(null)
+    const [creationName, setCreationName] = useState("")
+
+    // Bulk Upload State
+    const [isBulkUploading, setIsBulkUploading] = useState(false)
+
+    // ... (existing fetch functions) ...
+
+    // Hierarchy Creation Handlers
+    const handleCreateHierarchy = async () => {
+        if (!creationName) return
+        setIsCreating(true)
+
+        let url = ""
+        let body = {}
+
+        if (creationType === "SUBJECT") {
+            url = "/api/admin/subjects"
+            body = { name: creationName }
+        } else if (creationType === "CHAPTER") {
+            if (!selectedSubject) { alert("Select a Subject first"); setIsCreating(false); return }
+            url = "/api/admin/chapters"
+            body = { name: creationName, subjectId: selectedSubject }
+        } else if (creationType === "SUBTOPIC") {
+            if (!selectedChapter) { alert("Select a Chapter first"); setIsCreating(false); return }
+            url = "/api/admin/subtopics"
+            body = { name: creationName, chapterId: selectedChapter }
+        }
+
+        const res = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+        if (res.ok) {
+            alert(`${creationType} Created!`)
+            setCreationName("")
+            setCreationType(null)
+            fetchMetadata() // Refresh all metadata to show new items
+            if (creationType === "SUBJECT") { /* Auto-refresh done by fetchMetadata */ }
+            if (creationType === "CHAPTER") fetchChapters()
+            if (creationType === "SUBTOPIC") fetchSubtopics()
+        } else {
+            alert("Failed to create")
+        }
+        setIsCreating(false)
+    }
+
+    const openCreationDialog = (type: "SUBJECT" | "CHAPTER" | "SUBTOPIC") => {
+        setCreationType(type)
+        setCreationName("")
+    }
+
+    // Bulk Upload Handler
+    const handleBulkUploadFull = async () => {
+        if (!csvFile || !selectedSubject) {
+            alert("Please select a valid CSV file and ensure at least a Subject is selected.")
+            return
+        }
+
+        setIsBulkUploading(true)
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+            const text = e.target?.result as string
+            const rows = text.split("\n").slice(1) // Skip header
+            const questions = rows.map(row => {
+                // Simple CSV parse (handling commas inside quotes is tricky, simple split for now)
+                // Format: Text, OptionA, OptionB, OptionC, OptionD, Correct, Diff, Type
+                const cols = row.split(",")
+                if (cols.length < 6) return null
+                return {
+                    text: cols[0]?.trim(),
+                    optionA: cols[1]?.trim(),
+                    optionB: cols[2]?.trim(),
+                    optionC: cols[3]?.trim(),
+                    optionD: cols[4]?.trim(),
+                    correct: cols[5]?.trim(),
+                    difficulty: cols[6]?.trim() || "INTERMEDIATE",
+                    type: cols[7]?.trim() || "SINGLE"
+                }
+            }).filter(q => q && q.text)
+
+            const context = {
+                courseId: selectedCourse,
+                subjectId: selectedSubject,
+                chapterId: selectedChapter,
+                subtopicId: selectedSubtopic
+            }
+
+            const res = await fetch("/api/admin/questions/bulk", {
+                method: "POST",
+                body: JSON.stringify({ questions, context })
+            })
+
+            if (res.ok) {
+                const data = await res.json()
+                alert(`Successfully uploaded ${data.count} questions!`)
+                setCsvFile(null)
+                fetchQuestions()
+            } else {
+                alert("Bulk upload failed. Check console.")
+            }
+            setIsBulkUploading(false)
+        }
+        reader.readAsText(csvFile)
+    }
+
+    const downloadTemplate = () => {
+        const header = "Question Text,Option A,Option B,Option C,Option D,Correct Answer (Text or Option A),Difficulty (BEGINNER/INTERMEDIATE/ADVANCED),Type (SINGLE/MULTIPLE/INTEGER)\n"
+        const sample = "What is 2+2?,1,2,3,4,4,BEGINNER,SINGLE"
+        const blob = new Blob([header + sample], { type: "text/csv" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = "question_template.csv"
+        a.click()
+    }
+
     return (
         <Card>
             <CardHeader>
@@ -199,6 +316,17 @@ export function QuestionBankManagement() {
                 <CardDescription>Manage questions by Hierarchy.</CardDescription>
             </CardHeader>
             <CardContent>
+                {/* Creation Dialog */}
+                <Dialog open={!!creationType} onOpenChange={() => setCreationType(null)}>
+                    <DialogContent>
+                        <DialogHeader><DialogTitle>Create {creationType}</DialogTitle></DialogHeader>
+                        <Input value={creationName} onChange={e => setCreationName(e.target.value)} placeholder={`Enter ${creationType} Name`} />
+                        <Button onClick={handleCreateHierarchy} disabled={isCreating}>
+                            {isCreating ? "Creating..." : "Create"}
+                        </Button>
+                    </DialogContent>
+                </Dialog>
+
                 {/* Context Selectors */}
                 <div className="grid grid-cols-3 gap-4 mb-4">
                     <div>
@@ -211,14 +339,17 @@ export function QuestionBankManagement() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <div>
-                        <Label>Subject (Required)</Label>
-                        <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-                            <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
-                            <SelectContent>
-                                {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                    <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                            <Label>Subject (Required)</Label>
+                            <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                                <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                                <SelectContent>
+                                    {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button variant="outline" size="icon" onClick={() => openCreationDialog("SUBJECT")}>+</Button>
                     </div>
                     <div>
                         <Label>Batch</Label>
@@ -233,25 +364,31 @@ export function QuestionBankManagement() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-4 mb-6">
-                    <div>
-                        <Label>Chapter</Label>
-                        <Select value={selectedChapter} onValueChange={setSelectedChapter} disabled={!selectedSubject}>
-                            <SelectTrigger><SelectValue placeholder="Select Chapter" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Chapters</SelectItem>
-                                {chapters.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                    <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                            <Label>Chapter</Label>
+                            <Select value={selectedChapter} onValueChange={setSelectedChapter} disabled={!selectedSubject}>
+                                <SelectTrigger><SelectValue placeholder="Select Chapter" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Chapters</SelectItem>
+                                    {chapters.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button variant="outline" size="icon" disabled={!selectedSubject} onClick={() => openCreationDialog("CHAPTER")}>+</Button>
                     </div>
-                    <div>
-                        <Label>Subtopic</Label>
-                        <Select value={selectedSubtopic} onValueChange={setSelectedSubtopic} disabled={!selectedChapter}>
-                            <SelectTrigger><SelectValue placeholder="Select Subtopic" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Subtopics</SelectItem>
-                                {subtopics.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                    <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                            <Label>Subtopic</Label>
+                            <Select value={selectedSubtopic} onValueChange={setSelectedSubtopic} disabled={!selectedChapter}>
+                                <SelectTrigger><SelectValue placeholder="Select Subtopic" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Subtopics</SelectItem>
+                                    {subtopics.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button variant="outline" size="icon" disabled={!selectedChapter} onClick={() => openCreationDialog("SUBTOPIC")}>+</Button>
                     </div>
                     <div>
                         <Label>Difficulty</Label>
@@ -271,7 +408,7 @@ export function QuestionBankManagement() {
                     <TabsList className="mb-4">
                         <TabsTrigger value="repository">Repository ({questions.length})</TabsTrigger>
                         <TabsTrigger value="single">Add Single</TabsTrigger>
-                        {/* <TabsTrigger value="bulk">Bulk Upload</TabsTrigger> */}
+                        <TabsTrigger value="bulk">Bulk Upload</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="repository">
@@ -300,6 +437,7 @@ export function QuestionBankManagement() {
                     </TabsContent>
 
                     <TabsContent value="single" className="space-y-4">
+                        {/* ... (Single Add Form - Unchanged) ... */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label>Question Type</Label>
@@ -395,6 +533,31 @@ export function QuestionBankManagement() {
                         <Button onClick={handleSingleAdd} disabled={!selectedSubject || isUploading}>
                             {isUploading ? "Uploading Images..." : "Add Question to Bank"}
                         </Button>
+                    </TabsContent>
+
+                    <TabsContent value="bulk" className="space-y-4">
+                        <div className="p-4 border rounded bg-slate-50 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="font-medium">Bulk Upload via CSV</h3>
+                                    <p className="text-sm text-muted-foreground">Upload questions to the <strong>currently selected Subject/Chapter/Subtopic</strong>.</p>
+                                </div>
+                                <Button variant="outline" size="sm" onClick={downloadTemplate}>Download Template</Button>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Select CSV File</Label>
+                                <Input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files?.[0] || null)} />
+                            </div>
+
+                            <div className="text-sm bg-yellow-50 text-yellow-800 p-2 rounded">
+                                <strong>Note:</strong> Ensure your CSV follows the template format. Images are not supported in bulk upload yet.
+                            </div>
+
+                            <Button onClick={handleBulkUploadFull} disabled={!csvFile || isBulkUploading || !selectedSubject} className="w-full">
+                                {isBulkUploading ? "Processing..." : "Upload Questions"}
+                            </Button>
+                        </div>
                     </TabsContent>
                 </Tabs>
             </CardContent>
