@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Copy, Printer, Trash2 } from "lucide-react"
 
 export function TestCreation() {
     const [courses, setCourses] = useState<any[]>([])
@@ -375,6 +376,32 @@ export function TestCreation() {
                                     </div>
                                     <div className="text-xs text-muted-foreground mt-1">
                                         {t.course?.name} • {t.batches.map((b: any) => b.name).join(", ")} • {t._count.questions} Qs
+                                    </div>
+                                    <div className="flex gap-2 mt-2 justify-end items-center">
+                                        <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/student/test/${t.id}`); alert("Copied!") }}>
+                                            <Copy className="h-4 w-4 mr-2" /> Link
+                                        </Button>
+
+                                        <div className="relative">
+                                            <select
+                                                className="h-9 w-[100px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none"
+                                                onChange={(e) => {
+                                                    if (e.target.value) window.open(`/print/test/${t.id}?mode=${e.target.value}`, '_blank');
+                                                    e.target.value = ""; // Reset
+                                                }}
+                                                defaultValue=""
+                                            >
+                                                <option value="" disabled>Print...</option>
+                                                <option value="student">Student Paper</option>
+                                                <option value="teacher">Teacher Copy</option>
+                                                <option value="key">Answer Key</option>
+                                            </select>
+                                            <Printer className="absolute right-2 top-2.5 h-4 w-4 opacity-50 pointer-events-none" />
+                                        </div>
+
+                                        <Button variant="ghost" size="sm" className="text-red-500">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
                                     </div>
                                 </div>
                             ))}
