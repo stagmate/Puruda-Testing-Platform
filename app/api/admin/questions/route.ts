@@ -7,11 +7,17 @@ export async function GET(req: Request) {
     const courseId = searchParams.get("courseId")
     const batchId = searchParams.get("batchId")
     const subjectId = searchParams.get("subjectId")
+    const chapterId = searchParams.get("chapterId")
+    const subtopicId = searchParams.get("subtopicId")
+    const difficulty = searchParams.get("difficulty")
 
     const where: any = {}
     if (courseId) where.courseId = courseId
     if (batchId) where.batchId = batchId
     if (subjectId) where.subjectId = subjectId
+    if (chapterId) where.chapterId = chapterId
+    if (subtopicId) where.subtopicId = subtopicId
+    if (difficulty) where.difficulty = difficulty
 
     const page = parseInt(searchParams.get("page") || "1")
     const limit = parseInt(searchParams.get("limit") || "50")
@@ -23,7 +29,9 @@ export async function GET(req: Request) {
             include: {
                 course: { select: { name: true } },
                 batch: { select: { name: true } },
-                subject: { select: { name: true } }
+                subject: { select: { name: true } },
+                chapter: { select: { name: true } },
+                subtopic: { select: { name: true } }
             },
             orderBy: { createdAt: 'desc' },
             skip,
@@ -47,7 +55,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
     try {
         const body = await req.json()
-        const { text, options, correct, courseId, batchId, subjectId, imageUrl, optionImages } = body
+        const { text, options, correct, courseId, batchId, subjectId, chapterId, subtopicId, difficulty, imageUrl, optionImages } = body
 
         if (!text || !options || !correct) {
             return new NextResponse("Missing fields", { status: 400 })
@@ -65,7 +73,10 @@ export async function POST(req: Request) {
                 correct,
                 courseId,
                 batchId,
-                subjectId
+                subjectId,
+                chapterId: chapterId || null,
+                subtopicId: subtopicId || null,
+                difficulty: difficulty || "Medium"
             }
         })
         return NextResponse.json(question)
