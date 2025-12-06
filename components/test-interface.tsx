@@ -18,7 +18,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const router = useRouter()
     const [test, setTest] = useState<any>(null)
     const [currentQuestion, setCurrentQuestion] = useState(0)
-    const [answers, setAnswers] = useState<Record<string, number>>({})
+    const [answers, setAnswers] = useState<Record<string, any>>({}) // Changed to any to support array/string
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
     const [completed, setCompleted] = useState(false)
@@ -121,10 +121,24 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
         handleSubmit()
     }
 
-    const handleAnswer = (val: string) => {
+    const handleAnswer = (val: any) => {
         if (!test) return
         const qId = test.questions[currentQuestion].id
-        setAnswers({ ...answers, [qId]: parseInt(val) })
+        setAnswers({ ...answers, [qId]: val })
+    }
+
+    const handleCheckboxAnswer = (idx: number) => {
+        if (!test) return
+        const qId = test.questions[currentQuestion].id
+        const currentArr = Array.isArray(answers[qId]) ? answers[qId] : []
+
+        let newArr
+        if (currentArr.includes(idx)) {
+            newArr = currentArr.filter((i: number) => i !== idx)
+        } else {
+            newArr = [...currentArr, idx]
+        }
+        setAnswers({ ...answers, [qId]: newArr })
     }
 
     const handleSubmit = async () => {
@@ -187,6 +201,10 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
 
     const question = test.questions[currentQuestion]
     const currentAnswer = answers[question.id]
+    const qType = question.type || 'SINGLE'
+
+    // Provide default options if parsed as string or ensuring array
+    const options = typeof question.options === 'string' ? JSON.parse(question.options) : question.options || []
 
     return (
         <div ref={containerRef} className="bg-background min-h-screen flex flex-col items-center justify-center p-4">
@@ -230,21 +248,50 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 </CardHeader>
                 <CardContent className="p-6 md:p-8 min-h-[300px]">
                     <h2 className="text-lg md:text-xl font-medium mb-8 leading-relaxed">
+                        <span className="text-sm font-bold text-slate-500 mr-2 uppercase tracking-wide">[{qType}]</span>
                         {question.text}
                     </h2>
 
-                    <RadioGroup
-                        value={currentAnswer !== undefined ? currentAnswer.toString() : ""}
-                        onValueChange={handleAnswer}
-                        className="space-y-4"
-                    >
-                        {question.options.map((opt: string, idx: number) => (
-                            <div key={idx} className={`flex items-center space-x-3 p-4 rounded-lg border transition-all ${currentAnswer === idx ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'hover:bg-slate-50 hover:border-slate-300'}`}>
-                                <RadioGroupItem value={idx.toString()} id={`opt-${idx}`} />
-                                <Label htmlFor={`opt-${idx}`} className="flex-1 cursor-pointer font-normal text-base">{opt}</Label>
-                            </div>
-                        ))}
-                    </RadioGroup>
+                    {qType === 'INTEGER' ? (
+                        <div className="space-y-4">
+                            <Label className="text-base text-muted-foreground">Enter your numerical answer:</Label>
+                            <input
+                                type="text"
+                                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-xl ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                value={currentAnswer || ''}
+                                onChange={(e) => handleAnswer(e.target.value)}
+                                placeholder="e.g. 42"
+                            />
+                        </div>
+                    ) : qType === 'MULTIPLE' ? (
+                        <div className="space-y-4">
+                            {options.map((opt: string, idx: number) => {
+                                const isSelected = Array.isArray(currentAnswer) && currentAnswer.includes(idx)
+                                return (
+                                    <div key={idx} onClick={() => handleCheckboxAnswer(idx)} className={`flex items-center space-x-3 p-4 rounded-lg border transition-all cursor-pointer ${isSelected ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'hover:bg-slate-50 hover:border-slate-300'}`}>
+                                        <div className={`h-4 w-4 rounded border flex items-center justify-center ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'}`}>
+                                            {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
+                                        </div>
+                                        <Label className="flex-1 cursor-pointer font-normal text-base pointer-events-none">{opt}</Label>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    ) : (
+                        <RadioGroup
+                            value={currentAnswer !== undefined ? currentAnswer.toString() : ""}
+                            onValueChange={(val) => handleAnswer(parseInt(val))}
+                            className="space-y-4"
+                        >
+                            {options.map((opt: string, idx: number) => (
+                                <div key={idx} className={`flex items-center space-x-3 p-4 rounded-lg border transition-all ${currentAnswer === idx ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'hover:bg-slate-50 hover:border-slate-300'}`}>
+                                    <RadioGroupItem value={idx.toString()} id={`opt-${idx}`} />
+                                    <Label htmlFor={`opt-${idx}`} className="flex-1 cursor-pointer font-normal text-base">{opt}</Label>
+                                </div>
+                            ))}
+                        </RadioGroup>
+                    )}
+
                 </CardContent>
                 <CardFooter className="flex justify-between bg-slate-50 p-6 border-t">
                     <Button

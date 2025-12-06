@@ -35,11 +35,57 @@ export async function POST(req: Request) {
 
         test.questions.forEach((q: any) => {
             const userAnswer = responses[q.id]
-            // We use 'correct' field from Question model (aliased/used properly)
-            // Note: Schema has 'correct', logic might have used 'correctAnswer'
-            if (userAnswer !== undefined && userAnswer === parseInt(q.correct)) {
-                score++
+            if (userAnswer === undefined || userAnswer === null) return
+
+            const type = q.type || 'SINGLE'
+            let isCorrect = false
+
+            // Parse Options if needed
+            let options: string[] = []
+            try {
+                options = typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+            } catch (e) { options = [] }
+
+            if (type === 'INTEGER') {
+                // Integer Logic: Compare numeric values with epsilon
+                const userVal = parseFloat(userAnswer.toString())
+                const correctVal = parseFloat(q.correct)
+                if (!isNaN(userVal) && !isNaN(correctVal)) {
+                    isCorrect = Math.abs(userVal - correctVal) < 0.01
+                } else {
+                    // Fallback for string matching
+                    isCorrect = userAnswer.toString().trim() === q.correct.toString().trim()
+                }
+            } else if (type === 'MULTIPLE') {
+                // MSQ Logic: userAnswer should be array of indices or strings
+                // We resolve indices to values to compare with q.correct (which is JSON array of values)
+                let correctAnswers: string[] = []
+                try {
+                    correctAnswers = typeof q.correct === 'string' ? JSON.parse(q.correct) : q.correct
+                } catch (e) { correctAnswers = [] } // Or maybe single string?
+
+                let userSelectedValues: string[] = []
+                if (Array.isArray(userAnswer)) {
+                    userSelectedValues = userAnswer.map((idx: any) => {
+                        return typeof idx === 'number' && options[idx] ? options[idx] : idx.toString()
+                    })
+                }
+
+                // Sorting for comparison
+                const sortedUser = [...userSelectedValues].sort()
+                const sortedCorrect = [...correctAnswers].sort()
+
+                isCorrect = sortedUser.length === sortedCorrect.length &&
+                    sortedUser.every((val, index) => val === sortedCorrect[index])
+
+            } else {
+                // SINGLE (MCQ) Logic
+                // Resolve index to value
+                const userVal = typeof userAnswer === 'number' && options[userAnswer] ? options[userAnswer] : userAnswer.toString()
+                isCorrect = userVal === q.correct
             }
+
+            if (isCorrect) score++
         })
 
         // Create Result

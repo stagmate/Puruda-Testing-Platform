@@ -48,6 +48,18 @@ model Batch {
   tests     Test[]   @relation("BatchTests")
 }
 
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum QuestionType {
+  SINGLE
+  MULTIPLE
+  INTEGER
+}
+
 model Subject {
   id        String   @id @default(uuid())
   name      String   @unique
@@ -81,7 +93,6 @@ model Question {
   optionDImageUrl String?
 
   correct   String
-  createdAt DateTime @default(now())
   
   // Grouping
   subjectId String?
@@ -91,12 +102,14 @@ model Question {
   subtopicId String?
   subtopic  Subtopic? @relation(fields: [subtopicId], references: [id])
   
+  difficulty    Difficulty @default(INTERMEDIATE)
+  type          QuestionType @default(SINGLE)
+  createdAt DateTime @default(now())
+  
   courseId  String?
   course    Course?  @relation(fields: [courseId], references: [id])
   batchId   String?
   batch     Batch?   @relation(fields: [batchId], references: [id])
-
-  difficulty String   @default("Medium") // Beginner, Intermediate, Advanced
 
   // Legacy field support (optional, can remove if parsed into subject relation)
   legacySubject String? 

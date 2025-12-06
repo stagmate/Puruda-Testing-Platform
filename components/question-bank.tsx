@@ -29,8 +29,9 @@ export function QuestionBankManagement() {
     const [newQuestion, setNewQuestion] = useState({
         text: "",
         optionA: "", optionB: "", optionC: "", optionD: "",
-        correct: "",
-        difficulty: "BEGINNER"
+        correct: "" as string | string[], // Can be array for MSQ
+        difficulty: "BEGINNER",
+        type: "SINGLE"
     })
 
     // Image States
@@ -113,24 +114,48 @@ export function QuestionBankManagement() {
             return
         }
 
+        if (newQuestion.type === 'MULTIPLE' && Array.isArray(newQuestion.correct) && newQuestion.correct.length === 0) {
+            alert("Please select at least one correct option")
+            return
+        }
+
         setIsUploading(true)
 
         const [qUrl, aUrl, bUrl, cUrl, dUrl] = await Promise.all([
             uploadImage(qImage), uploadImage(optAImage), uploadImage(optBImage), uploadImage(optCImage), uploadImage(optDImage)
         ])
 
+        // Resolve correct answer value(s) to actual content if using A/B/C/D mapping
+        // Logic: If user selects "Option A", we send the Content of Option A.
+        // Actually, schema expects the content string.
+        const getOptionContent = (key: string) => {
+            if (key === 'Option A') return newQuestion.optionA
+            if (key === 'Option B') return newQuestion.optionB
+            if (key === 'Option C') return newQuestion.optionC
+            if (key === 'Option D') return newQuestion.optionD
+            return key // integer or direct value
+        }
+
+        let finalCorrect = newQuestion.correct;
+        if (newQuestion.type === 'SINGLE') {
+            finalCorrect = getOptionContent(newQuestion.correct as string)
+        } else if (newQuestion.type === 'MULTIPLE') {
+            finalCorrect = (newQuestion.correct as string[]).map(k => getOptionContent(k))
+        }
+
         const payload = {
             text: newQuestion.text,
             imageUrl: qUrl,
             options: [newQuestion.optionA, newQuestion.optionB, newQuestion.optionC, newQuestion.optionD],
             optionImages: [aUrl, bUrl, cUrl, dUrl],
-            correct: newQuestion.correct,
+            correct: finalCorrect,
             courseId: selectedCourse || null,
             batchId: selectedBatch || null,
             subjectId: selectedSubject,
             chapterId: selectedChapter || null,
             subtopicId: selectedSubtopic || null,
-            difficulty: newQuestion.difficulty
+            difficulty: newQuestion.difficulty,
+            type: newQuestion.type
         }
 
         const res = await fetch("/api/admin/questions", {
@@ -156,6 +181,15 @@ export function QuestionBankManagement() {
         }
         // Simplified for brevity, same logic as before
         alert("Bulk upload not yet updated for Chapter/Subtopic via CSV. Please add single question.")
+    }
+
+    const toggleCorrectOption = (opt: string) => {
+        const current = Array.isArray(newQuestion.correct) ? newQuestion.correct : []
+        if (current.includes(opt)) {
+            setNewQuestion({ ...newQuestion, correct: current.filter(c => c !== opt) })
+        } else {
+            setNewQuestion({ ...newQuestion, correct: [...current, opt] })
+        }
     }
 
     return (
@@ -250,6 +284,7 @@ export function QuestionBankManagement() {
                                             <span className={`text-[10px] font-bold px-1 rounded mr-2 ${q.difficulty === 'BEGINNER' ? 'bg-green-100 text-green-700' : q.difficulty === 'ADVANCED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
                                                 {q.difficulty || 'MED'}
                                             </span>
+                                            <span className="text-[10px] font-bold px-1 rounded mr-2 bg-slate-200 text-slate-700">{q.type || 'SINGLE'}</span>
                                             {i + 1}. {q.text}
                                         </p>
                                         {q.imageUrl && <span className="text-xs bg-blue-100 text-blue-800 px-1 rounded">Has Image</span>}
@@ -267,6 +302,17 @@ export function QuestionBankManagement() {
                     <TabsContent value="single" className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                             <div>
+                                <Label>Question Type</Label>
+                                <Select value={newQuestion.type} onValueChange={v => setNewQuestion({ ...newQuestion, type: v, correct: v === 'MULTIPLE' ? [] : "" })}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="SINGLE">Single Correct (MCQ)</SelectItem>
+                                        <SelectItem value="MULTIPLE">Multiple Correct (MSQ)</SelectItem>
+                                        <SelectItem value="INTEGER">Integer / Numerical</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
                                 <Label>Difficulty Level</Label>
                                 <Select value={newQuestion.difficulty} onValueChange={v => setNewQuestion({ ...newQuestion, difficulty: v })}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -277,12 +323,12 @@ export function QuestionBankManagement() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="flex items-end">
-                                <p className="text-xs text-muted-foreground">Context is taken from the filters above (Subject → Chapter → Subtopic)</p>
-                            </div>
                         </div>
 
                         <div className="space-y-2">
+                            <div className="flex items-end mb-2">
+                                <p className="text-xs text-muted-foreground">Context is taken from the filters above (Subject → Chapter → Subtopic)</p>
+                            </div>
                             <Label>Question Text</Label>
                             <Textarea value={newQuestion.text} onChange={e => setNewQuestion({ ...newQuestion, text: e.target.value })} placeholder="Enter question..." />
                             <div className="flex items-center gap-2">
@@ -291,24 +337,60 @@ export function QuestionBankManagement() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                                <Input placeholder="Option A" value={newQuestion.optionA} onChange={e => setNewQuestion({ ...newQuestion, optionA: e.target.value })} />
+                        {newQuestion.type !== 'INTEGER' && (
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label>Option A</Label>
+                                        {newQuestion.type === 'MULTIPLE' && <input type="checkbox" checked={(newQuestion.correct as string[]).includes('Option A')} onChange={() => toggleCorrectOption('Option A')} />}
+                                    </div>
+                                    <Input placeholder="Option A Content" value={newQuestion.optionA} onChange={e => setNewQuestion({ ...newQuestion, optionA: e.target.value })} />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label>Option B</Label>
+                                        {newQuestion.type === 'MULTIPLE' && <input type="checkbox" checked={(newQuestion.correct as string[]).includes('Option B')} onChange={() => toggleCorrectOption('Option B')} />}
+                                    </div>
+                                    <Input placeholder="Option B Content" value={newQuestion.optionB} onChange={e => setNewQuestion({ ...newQuestion, optionB: e.target.value })} />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label>Option C</Label>
+                                        {newQuestion.type === 'MULTIPLE' && <input type="checkbox" checked={(newQuestion.correct as string[]).includes('Option C')} onChange={() => toggleCorrectOption('Option C')} />}
+                                    </div>
+                                    <Input placeholder="Option C Content" value={newQuestion.optionC} onChange={e => setNewQuestion({ ...newQuestion, optionC: e.target.value })} />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label>Option D</Label>
+                                        {newQuestion.type === 'MULTIPLE' && <input type="checkbox" checked={(newQuestion.correct as string[]).includes('Option D')} onChange={() => toggleCorrectOption('Option D')} />}
+                                    </div>
+                                    <Input placeholder="Option D Content" value={newQuestion.optionD} onChange={e => setNewQuestion({ ...newQuestion, optionD: e.target.value })} />
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <Input placeholder="Option B" value={newQuestion.optionB} onChange={e => setNewQuestion({ ...newQuestion, optionB: e.target.value })} />
-                            </div>
-                            <div className="space-y-2">
-                                <Input placeholder="Option C" value={newQuestion.optionC} onChange={e => setNewQuestion({ ...newQuestion, optionC: e.target.value })} />
-                            </div>
-                            <div className="space-y-2">
-                                <Input placeholder="Option D" value={newQuestion.optionD} onChange={e => setNewQuestion({ ...newQuestion, optionD: e.target.value })} />
-                            </div>
-                        </div>
+                        )}
 
                         <div className="space-y-2">
-                            <Label>Correct Answer (Exact Match)</Label>
-                            <Input placeholder="e.g. Option A Content" value={newQuestion.correct} onChange={e => setNewQuestion({ ...newQuestion, correct: e.target.value })} />
+                            <Label>Correct Answer</Label>
+                            {newQuestion.type === 'SINGLE' && (
+                                <Select value={newQuestion.correct as string} onValueChange={v => setNewQuestion({ ...newQuestion, correct: v })}>
+                                    <SelectTrigger><SelectValue placeholder="Select Correct Option" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Option A">Option A</SelectItem>
+                                        <SelectItem value="Option B">Option B</SelectItem>
+                                        <SelectItem value="Option C">Option C</SelectItem>
+                                        <SelectItem value="Option D">Option D</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )}
+                            {newQuestion.type === 'INTEGER' && (
+                                <Input type="text" placeholder="Enter numeric answer (e.g. 5, 10.5)" value={newQuestion.correct as string} onChange={e => setNewQuestion({ ...newQuestion, correct: e.target.value })} />
+                            )}
+                            {newQuestion.type === 'MULTIPLE' && (
+                                <p className="text-sm text-muted-foreground p-2 bg-slate-100 rounded">
+                                    Select correct options using the checkboxes above. Selected: {Array.isArray(newQuestion.correct) ? newQuestion.correct.join(", ") : ""}
+                                </p>
+                            )}
                         </div>
                         <Button onClick={handleSingleAdd} disabled={!selectedSubject || isUploading}>
                             {isUploading ? "Uploading Images..." : "Add Question to Bank"}

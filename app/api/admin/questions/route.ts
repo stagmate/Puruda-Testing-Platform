@@ -55,28 +55,39 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
     try {
         const body = await req.json()
-        const { text, options, correct, courseId, batchId, subjectId, chapterId, subtopicId, difficulty, imageUrl, optionImages } = body
+        const { text, options, correct, courseId, batchId, subjectId, chapterId, subtopicId, difficulty, type, imageUrl, optionImages } = body
 
-        if (!text || !options || !correct) {
+        if (!text || !correct) {
             return new NextResponse("Missing fields", { status: 400 })
+        }
+
+        // Validate options based on type
+        let validOptions = options;
+        if (type === "INTEGER") {
+            validOptions = []; // Integer questions don't need options
+        } else {
+            if (!options || options.length < 2) {
+                return new NextResponse("At least 2 options required", { status: 400 })
+            }
         }
 
         const question = await db.question.create({
             data: {
                 text,
                 imageUrl: imageUrl || null,
-                options: JSON.stringify(options),
+                options: JSON.stringify(validOptions),
                 optionAImageUrl: optionImages?.[0] || null,
                 optionBImageUrl: optionImages?.[1] || null,
                 optionCImageUrl: optionImages?.[2] || null,
                 optionDImageUrl: optionImages?.[3] || null,
-                correct,
+                correct: typeof correct === 'object' ? JSON.stringify(correct) : correct, // Handle array for MULTIPLE
                 courseId,
                 batchId,
                 subjectId,
                 chapterId: chapterId || null,
                 subtopicId: subtopicId || null,
-                difficulty: difficulty || "Medium"
+                difficulty: difficulty || "INTERMEDIATE",
+                type: type || "SINGLE"
             }
         })
         return NextResponse.json(question)
