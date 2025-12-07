@@ -5,6 +5,8 @@ import { writeFile, unlink } from "fs/promises"
 import { join } from "path"
 import { tmpdir } from "os"
 
+import { getRotatedKey } from "@/lib/gemini-keys"
+
 // @ts-ignore
 const PDFParser = require("pdf2json")
 
@@ -24,11 +26,13 @@ export async function POST(req: Request) {
             return new NextResponse(JSON.stringify({ error: "No file uploaded" }), { status: 400 })
         }
 
-        apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ""
+        apiKey = getRotatedKey();
         if (!apiKey) {
-            console.error("GOOGLE_API_KEY is missing")
-            return new NextResponse(JSON.stringify({ error: "Server configuration error: GOOGLE_API_KEY missing" }), { status: 500 })
+            console.error("No Valid API Key found")
+            return new NextResponse(JSON.stringify({ error: "Server configuration error: No valid API Key available." }), { status: 500 })
         }
+
+        console.log("Using API Key (last 4 chars):", apiKey.slice(-4))
 
         // Initialize Gemini
         const genAI = new GoogleGenerativeAI(apiKey)

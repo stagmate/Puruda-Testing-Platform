@@ -18,15 +18,18 @@ If asked about unrelated topics, politely steer back to the platform.
 Keep answers concise and helpful.
 `
 
+import { getRotatedKey } from "@/lib/gemini-keys"
+
 export async function POST(req: Request) {
     try {
-        if (!process.env.GOOGLE_API_KEY) {
+        const apiKey = getRotatedKey();
+        if (!apiKey) {
             return NextResponse.json({
-                response: "Config Error: GOOGLE_API_KEY is missing in server environment. Please add it in Vercel Settings."
+                response: "Config Error: No valid API Key found. Please add keys to Vercel or code configuration."
             }, { status: 500 })
         }
 
-        const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY)
+        const genAI = new GoogleGenerativeAI(apiKey)
         const { message, history = [] } = await req.json()
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
 
