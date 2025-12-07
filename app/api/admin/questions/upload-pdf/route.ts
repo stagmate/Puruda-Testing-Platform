@@ -118,11 +118,12 @@ export async function POST(req: Request) {
         // --- ATTEMPT 2: Text-Only Fallback ---
         if (!nativePdfSuccess) {
             console.log("Falling back to Text-Only Parsing (Quota/Error Recovery)...")
+            let pdfText = "";
 
             try {
                 // Extract Text Locally
                 const pdfParser = new PDFParser(null, 1);
-                const pdfText = await new Promise<string>((resolve, reject) => {
+                pdfText = await new Promise<string>((resolve, reject) => {
                     pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
                     pdfParser.on("pdfParser_dataReady", () => {
                         resolve(pdfParser.getRawTextContent());
@@ -177,10 +178,32 @@ export async function POST(req: Request) {
 
             } catch (fallbackError: any) {
                 console.error("Text Fallback Failed:", fallbackError)
-                return new NextResponse(JSON.stringify({
-                    error: "All parsing methods failed. Quota limits may be reached.",
-                    details: `FALLBACK ERROR (Text Mode): ${fallbackError.message} \n\n PRIMARY ERROR (Native PDF): ${lastError?.message}`
-                }), { status: 500 })
+
+                // --- ATTEMPT 3: Deterministic Regex/Heuristic Fallback (Non-AI) ---
+                console.log("Attempting Regex Parser (Last Resort)...")
+                try {
+                    const { parseTextWithRegex } = require("@/lib/regex-parser");
+                    if (!pdfText) {
+                        throw new Error("PDF text was not extracted for regex parsing.");
+                    }
+                    parsedQuestions = parseTextWithRegex(pdfText);
+
+                    if (parsedQuestions.length === 0) {
+                        throw new Error("Regex parser found 0 questions. Format not recognized.");
+                    }
+
+                    console.log(`Regex Parser recovered ${parsedQuestions.length} questions.`);
+                    // Add a flag to indicate this was a regex fallback
+                    parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: (q.examTag ? q.examTag + " (Regex Fallback)" : "Regex Fallback") }))
+
+                } catch (regexError: any) {
+                    console.error("Regex Parser Failed:", regexError);
+
+                    return new NextResponse(JSON.stringify({
+                        error: "All parsing methods (AI & Regex) failed.",
+                        details: `Native PDF: ${lastError?.message}\nText AI: ${fallbackError.message}\nRegex: ${regexError.message}`
+                    }), { status: 500 })
+                }
             }
         }
 
