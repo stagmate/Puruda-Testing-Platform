@@ -211,8 +211,8 @@ export async function POST(req: Request) {
                         let refineSuccess = false;
                         let refineErrorMsg = "";
 
-                        // Switch back to 1.5-flash as primary (most stable/quota-friendly)
-                        const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"];
+                        // Switch back to 1.5-flash as primary, but add gemini-pro (legacy) as valid backup
+                        const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
 
                         for (const modelName of REFINE_MODELS) {
                             try {
@@ -220,14 +220,14 @@ export async function POST(req: Request) {
                                 const refineGenAI = new GoogleGenerativeAI(currentKey);
                                 const refineModel = refineGenAI.getGenerativeModel({ model: modelName });
 
-                                const refinePrompt = `
+                                const fullRefinePrompt = `
                                 I have some roughly parsed questions from a PDF. 
                                 The options might be merged into the text, or solutions might be missing.
                                 Please REFINE and RESTRUCTURE them into clean JSON.
 
                                 Raw Questions:
                                 ${JSON.stringify(parsedQuestions.slice(0, 15))} 
-                                // Limit to 15 to ensure strict JSON adherence and avoid token limits.
+                                // Limit to 15 to ensure strict JSON adherence.
 
                                 Strict JSON Schema:
                                 [{
@@ -250,7 +250,7 @@ export async function POST(req: Request) {
                                 - GENERATE solutions if missing.
                                 `;
 
-                                const refineResult = await refineModel.generateContent(refinePrompt);
+                                const refineResult = await refineModel.generateContent(fullRefinePrompt);
                                 const refineText = refineResult.response.text();
                                 const refinedJson = JSON.parse(refineText.replace(/```json/g, "").replace(/```/g, "").trim());
 
@@ -271,9 +271,10 @@ export async function POST(req: Request) {
                         }
 
                         if (!refineSuccess) {
-                            // If all refinement attempts fail, keep raw but mark it with specific error
-                            const shortError = refineErrorMsg.includes("429") ? "Quota" : refineErrorMsg.includes("404") ? "Model" : "Error";
-                            parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: `Regex (Raw) - AI Failed (${shortError})` }))
+                            // Show the ACTUAL error message in the tag so we can debug it
+                            // e.g. "404 Not Found" or "API Key Invalid"
+                            const cleanError = refineErrorMsg.replace(/\[.*?\]/g, "").substring(0, 30);
+                            parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: `Regex (Raw) - Err: ${cleanError}` }))
                         }
                     }
 
