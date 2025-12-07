@@ -34,6 +34,11 @@ export async function POST(req: Request) {
             subjectId: context.subjectId || null,
             chapterId: context.chapterId || null,
             subtopicId: context.subtopicId || null,
+
+            // AI/Extra Fields
+            solution: q.solution || null,
+            examTag: q.examTag || null,
+            hasDiagram: q.hasDiagram || false,
         }))
 
         // createMany is faster

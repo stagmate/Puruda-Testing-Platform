@@ -114,6 +114,11 @@ model Question {
   // Legacy field support (optional, can remove if parsed into subject relation)
   legacySubject String? 
 
+  // AI / Context Fields
+  solution      String? // Detailed solution text (latex supported)
+  examTag       String? // e.g. "JEE Advanced 2024"
+  hasDiagram    Boolean @default(false) 
+
   tests     Test[]   @relation("TestQuestions")
 }
 
