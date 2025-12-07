@@ -101,5 +101,80 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         processLastQuestion(text.length);
     }
 
+    // --- Post-Processing: Extract Answer Key ---
+    // The Answer Key often appears at the end of the document, which means it might be appended to the D option of the last question.
+    // Pattern: "Que. 1 2 3 ... Ans. A B C ..."
+    if (questions.length > 0) {
+        const lastQ = questions[questions.length - 1];
+
+        // Check if last question has the answer key in its option D or text
+        const answerKeyRegex = /Que\.?\s*((?:\d+\s*)+)\s*Ans\.?\s*((?:[A-D]\s*)+)/i;
+        let potentialKeyText = "";
+        let foundInField: "optionD" | "text" | null = null;
+
+        if (lastQ.optionD && answerKeyRegex.test(lastQ.optionD)) {
+            potentialKeyText = lastQ.optionD;
+            foundInField = "optionD";
+        } else if (answerKeyRegex.test(lastQ.text)) { // Fallback if no options
+            potentialKeyText = lastQ.text;
+            foundInField = "text";
+        }
+
+        if (foundInField && potentialKeyText) {
+            const match = potentialKeyText.match(answerKeyRegex);
+            if (match) {
+                const qNumStr = match[1];
+                const ansStr = match[2];
+
+                // Extract all numbers
+                const qNums = qNumStr.match(/\d+/g);
+                // Extract all answers
+                const answers = ansStr.match(/[A-D]/gi);
+
+                if (qNums && answers && qNums.length === answers.length) {
+                    console.log(`Found Answer Key with ${qNums.length} entries.`);
+
+                    // 1. Create a Map
+                    const ansMap = new Map<string, string>();
+                    qNums.forEach((num, idx) => {
+                        ansMap.set(num, answers[idx].toUpperCase());
+                    });
+
+                    // 2. Apply to ALL questions
+                    questions.forEach((q, idx) => {
+                        // We assume questions are in order 1..N, but let's be safe?
+                        // Ideally we tracked 'currentNumber' in the loop. 
+                        // But for now, let's assume index+1 maps to the key number.
+                        // Or better: We didn't save the qNumber in the object. 
+                        // Let's assume sequential mapping for now as heurisic.
+
+                        const qNum = (idx + 1).toString();
+                        if (ansMap.has(qNum)) {
+                            const ansLetter = ansMap.get(qNum);
+                            if (ansLetter) {
+                                // Map letter to full option text if possible
+                                let fullAns = "";
+                                if (ansLetter === 'A') fullAns = q.optionA || "Option A";
+                                if (ansLetter === 'B') fullAns = q.optionB || "Option B";
+                                if (ansLetter === 'C') fullAns = q.optionC || "Option C";
+                                if (ansLetter === 'D') fullAns = q.optionD || "Option D";
+
+                                q.correct = `(${ansLetter}) ${fullAns}`;
+                            }
+                        }
+                    });
+
+                    // 3. CLEANUP: Remove the Answer Key text from the Last Question
+                    const cleanStr = potentialKeyText.replace(match[0], "").trim();
+                    if (foundInField === "optionD") {
+                        lastQ.optionD = cleanStr;
+                    } else {
+                        lastQ.text = cleanStr;
+                    }
+                }
+            }
+        }
+    }
+
     return questions;
 }
