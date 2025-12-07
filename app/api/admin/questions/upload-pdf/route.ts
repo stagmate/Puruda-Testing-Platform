@@ -207,98 +207,103 @@ export async function POST(req: Request) {
 
                     // --- ATTEMPT 4: AI Refinement of Regex Output ---
                     if (parsedQuestions.length > 0) {
-                        console.log("Attempting AI Refinement of Regex Output...")
-                        let refineSuccess = false;
-                        let refineErrorMsg = "";
+                        console.log("Attempting AI Refinement of Regex Output (Chunked)...")
 
                         // Helper for basic delay
                         const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-                        // Switch back to 1.5-flash as primary, but add gemini-pro (legacy) as valid backup
-                        const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
+                        // Models: Try Flash first (fastest), then Pro
+                        const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"];
 
-                        for (const modelName of REFINE_MODELS) {
-                            try {
-                                const currentKey = getRotatedKey();
-                                const refineGenAI = new GoogleGenerativeAI(currentKey);
-                                const refineModel = refineGenAI.getGenerativeModel({ model: modelName });
+                        // Chunking Logic: Process in small batches to avoid "Error fetching" (Payload too large)
+                        const CHUNK_SIZE = 4;
+                        let refinedAllQuestions: any[] = [];
 
-                                const fullRefinePrompt = `
-                                I have some roughly parsed questions from a PDF. 
-                                The options might be merged into the text, or solutions might be missing.
-                                Please REFINE and RESTRUCTURE them into clean JSON.
+                        // Split into chunks
+                        const chunks = [];
+                        for (let i = 0; i < parsedQuestions.length; i += CHUNK_SIZE) {
+                            chunks.push(parsedQuestions.slice(i, i + CHUNK_SIZE));
+                        }
 
-                                Raw Questions:
-                                ${JSON.stringify(parsedQuestions.slice(0, 10))} 
-                                // Limit to 10 to ensure strict JSON adherence and avoid payload issues.
+                        console.log(`Processing ${chunks.length} chunks of size ${CHUNK_SIZE}...`);
 
-                                Strict JSON Schema:
-                                [{
-                                "text": "Clean Question Text (Separate from options). Use LaTeX.",
-                                "optionA": "Option A content", 
-                                "optionB": "Option B content", 
-                                "optionC": "Option C content", 
-                                "optionD": "Option D content",
-                                "correct": "Correct Answer",
-                                "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
-                                "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
-                                "solution": "Detailed Solution (Generate if missing)",
-                                "examTag": "Exam Name",
-                                "hasDiagram": boolean
-                                }]
-                                
-                                Rules:
-                                - DETECT options hidden in text (e.g. "(A) 93.4") and move them to option fields.
-                                - If a question is a "Solved Example", format it nicely.
-                                - GENERATE solutions if missing.
-                                `;
+                        for (let i = 0; i < chunks.length; i++) {
+                            const chunk = chunks[i];
+                            let chunkSuccess = false;
+                            let chunkRefined: any[] = [];
+                            let chunkErrorMsg = "";
 
-                                // Retry Logic: Try up to 2 times per model
-                                let attempts = 0;
-                                let success = false;
-                                let loopError: any = null;
+                            // Try to refine this individual chunk
+                            for (const modelName of REFINE_MODELS) {
+                                try {
+                                    const currentKey = getRotatedKey();
+                                    const refineGenAI = new GoogleGenerativeAI(currentKey);
+                                    const refineModel = refineGenAI.getGenerativeModel({ model: modelName });
 
-                                while (attempts < 2 && !success) {
-                                    try {
-                                        attempts++;
-                                        const refineResult = await refineModel.generateContent(fullRefinePrompt);
-                                        const refineText = refineResult.response.text();
-                                        const refinedJson = JSON.parse(refineText.replace(/```json/g, "").replace(/```/g, "").trim());
+                                    const chunkPrompt = `
+                                    Refine these specific questions from a PDF.
+                                    Fix formatting, separate options, and generate solutions.
 
-                                        // Merge/Replace
-                                        parsedQuestions = refinedJson.map((q: any) => ({
-                                            ...q,
-                                            examTag: "Regex + AI Refined"
-                                        }));
-                                        console.log(`AI Refinement Successful with ${modelName} (Attempt ${attempts})!`);
-                                        refineSuccess = true;
-                                        success = true;
-                                    } catch (e: any) {
-                                        loopError = e;
-                                        console.warn(`Attempt ${attempts} with ${modelName} failed: ${e.message}`);
-                                        if (attempts < 2) await delay(1000); // Wait 1s before retry
+                                    Raw Questions:
+                                    ${JSON.stringify(chunk)}
+
+                                    Strict JSON Schema:
+                                    [{
+                                      "text": "Question text (LaTeX).",
+                                      "optionA": "Opt A", "optionB": "Opt B", "optionC": "Opt C", "optionD": "Opt D",
+                                      "correct": "Answer",
+                                      "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
+                                      "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
+                                      "solution": "Detailed Solution (Generate if missing)",
+                                      "examTag": "Exam Name",
+                                      "hasDiagram": boolean
+                                    }]
+                                    
+                                    Rules: Output JSON ONLY. Fix broken text.
+                                    `;
+
+                                    // Retry per model loop
+                                    let attempts = 0;
+                                    while (attempts < 2 && !chunkSuccess) {
+                                        try {
+                                            attempts++;
+                                            const result = await refineModel.generateContent(chunkPrompt);
+                                            const text = result.response.text();
+                                            const json = JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
+
+                                            // Validate length matches to ensure we didn't lose questions
+                                            if (json.length > 0) {
+                                                chunkRefined = json.map((q: any) => ({ ...q, examTag: "Regex + AI Refined" }));
+                                                chunkSuccess = true;
+                                                console.log(`Chunk ${i + 1}/${chunks.length} refined with ${modelName}`);
+                                            }
+                                        } catch (e: any) {
+                                            console.warn(`Chunk ${i + 1} attempt ${attempts} (${modelName}) failed: ${e.message}`);
+                                            if (attempts < 2) await delay(1000);
+                                            chunkErrorMsg = e.message;
+                                        }
                                     }
+
+                                    if (chunkSuccess) break; // Chunk done, move to next chunk
+
+                                } catch (e: any) {
+                                    console.warn(`Chunk ${i + 1} model ${modelName} setup failed.`);
                                 }
+                            }
 
-                                if (success) break;
-                                throw loopError; // Re-throw to catch block below to try next model
-
-                            } catch (refineError: any) {
-                                console.warn(`Refinement with ${modelName} failed all attempts:`, refineError.message);
-                                refineErrorMsg = refineError.message; // Capture last error
-                                // Continue to next model
+                            // If Chunk Succeeded, add refined. If failed, add ORIGINAL raw chunk marked as error.
+                            if (chunkSuccess) {
+                                refinedAllQuestions.push(...chunkRefined);
+                            } else {
+                                console.log(`Chunk ${i + 1} failed all attempts. Keeping raw.`);
+                                let cleanError = chunkErrorMsg.replace(/\[.*?\]/g, "").trim().substring(0, 30);
+                                const errorChunk = chunk.map((q: any) => ({ ...q, examTag: `Regex (Raw) - Err: ${cleanError}` }));
+                                refinedAllQuestions.push(...errorChunk);
                             }
                         }
 
-                        if (!refineSuccess) {
-                            // Show the ACTUAL error message in the tag so we can debug it
-                            // Clean up the error message for display
-                            let cleanError = refineErrorMsg.replace(/\[.*?\]/g, "").trim();
-                            if (cleanError.startsWith(":")) cleanError = cleanError.substring(1).trim();
-                            if (cleanError.length > 30) cleanError = cleanError.substring(0, 30) + "...";
-
-                            parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: `Regex (Raw) - Err: ${cleanError}` }))
-                        }
+                        // Replace the main list with our new mixed list
+                        parsedQuestions = refinedAllQuestions;
                     }
 
 
