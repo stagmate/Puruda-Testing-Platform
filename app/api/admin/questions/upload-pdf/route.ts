@@ -1,22 +1,45 @@
-import { NextResponse } from "next/server"
-import { GoogleGenerativeAI } from "@google/generative-ai"
-import { GoogleAIFileManager } from "@google/generative-ai/server"
-import { writeFile, unlink } from "fs/promises"
-import { join } from "path"
-import { tmpdir } from "os"
+// Allow longer execution time for AI processing (Vercel/Next.js)
+export const maxDuration = 60;
 
-import { getRotatedKey } from "@/lib/gemini-keys"
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
+import { writeFile, unlink } from "fs/promises";
+import path from "path";
+import { tmpdir } from "os";
+
+import { getRotatedKey } from "@/lib/gemini-keys";
+// Import regex parser with alias to match existing code usage
+import { parseTextWithRegex as extractQuestionsRegex } from "@/lib/regex-parser";
 
 // @ts-ignore
-const PDFParser = require("pdf2json")
+const PDFParser = require("pdf2json");
+
+// Helper: Parse PDF validation locally (since lib might be missing)
+async function parsePDFWithPdf2Json(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const pdfParser = new PDFParser(null, 1);
+        pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+        pdfParser.on("pdfParser_dataReady", () => {
+            resolve(pdfParser.getRawTextContent());
+        });
+        pdfParser.loadPDF(filePath);
+    });
+}
 
 // List of models to try in order of preference
-const MODELS_TO_TRY = ["gemini-1.5-flash-8b", "gemini-1.5-flash", "gemini-2.0-flash"]
+const MODELS_TO_TRY = ["gemini-1.5-flash-8b", "gemini-1.5-flash", "gemini-2.0-flash"];
 
-export async function POST(req: Request) {
+// Helper to sanitize JSON string
+function cleanJsonString(str: string) {
+    return str.replace(/```json/g, "").replace(/```/g, "").trim();
+}
+
+export async function POST(req: NextRequest) {
     let tempPath: string | null = null;
     let fileUri: string | null = null;
     let apiKey = "";
+    let fileManager: GoogleAIFileManager | null = null;
 
     try {
         const formData = await req.formData()
@@ -36,13 +59,14 @@ export async function POST(req: Request) {
 
         // Initialize Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
-        const fileManager = new GoogleAIFileManager(apiKey)
+        fileManager = new GoogleAIFileManager(apiKey)
 
         // Save file temporarily
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
-        tempPath = join(tmpdir(), `upload-${Date.now()}.pdf`)
-        await writeFile(tempPath, buffer)
+        tempPath = path.join(tmpdir(), `upload-${Date.now()}.pdf`)
+        if (!tempPath) throw new Error("Temp path not initialized");
+        await writeFile(tempPath, buffer);
 
         // Strategy:
         // 1. Try Native PDF Upload + Parsing (Multimodal)
@@ -205,108 +229,6 @@ export async function POST(req: Request) {
 
                     console.log(`Regex Parser recovered ${parsedQuestions.length} questions.`);
 
-                    // --- ATTEMPT 4: AI Refinement of Regex Output ---
-                    if (parsedQuestions.length > 0) {
-                        console.log("Attempting AI Refinement of Regex Output (Chunked)...")
-
-                        // Helper for basic delay
-                        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-                        // Models: Try Flash first (fastest), then Pro
-                        const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"];
-
-                        // Chunking Logic: Process in small batches to avoid "Error fetching" (Payload too large)
-                        const CHUNK_SIZE = 4;
-                        let refinedAllQuestions: any[] = [];
-
-                        // Split into chunks
-                        const chunks = [];
-                        for (let i = 0; i < parsedQuestions.length; i += CHUNK_SIZE) {
-                            chunks.push(parsedQuestions.slice(i, i + CHUNK_SIZE));
-                        }
-
-                        console.log(`Processing ${chunks.length} chunks of size ${CHUNK_SIZE}...`);
-
-                        for (let i = 0; i < chunks.length; i++) {
-                            const chunk = chunks[i];
-                            let chunkSuccess = false;
-                            let chunkRefined: any[] = [];
-                            let chunkErrorMsg = "";
-
-                            // Try to refine this individual chunk
-                            for (const modelName of REFINE_MODELS) {
-                                try {
-                                    const currentKey = getRotatedKey();
-                                    const refineGenAI = new GoogleGenerativeAI(currentKey);
-                                    const refineModel = refineGenAI.getGenerativeModel({ model: modelName });
-
-                                    const chunkPrompt = `
-                                    Refine these specific questions from a PDF.
-                                    Fix formatting, separate options, and generate solutions.
-
-                                    Raw Questions:
-                                    ${JSON.stringify(chunk)}
-
-                                    Strict JSON Schema:
-                                    [{
-                                      "text": "Question text (LaTeX).",
-                                      "optionA": "Opt A", "optionB": "Opt B", "optionC": "Opt C", "optionD": "Opt D",
-                                      "correct": "Answer",
-                                      "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
-                                      "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
-                                      "solution": "Detailed Solution (Generate if missing)",
-                                      "examTag": "Exam Name",
-                                      "hasDiagram": boolean
-                                    }]
-                                    
-                                    Rules: Output JSON ONLY. Fix broken text.
-                                    `;
-
-                                    // Retry per model loop
-                                    let attempts = 0;
-                                    while (attempts < 2 && !chunkSuccess) {
-                                        try {
-                                            attempts++;
-                                            const result = await refineModel.generateContent(chunkPrompt);
-                                            const text = result.response.text();
-                                            const json = JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
-
-                                            // Validate length matches to ensure we didn't lose questions
-                                            if (json.length > 0) {
-                                                chunkRefined = json.map((q: any) => ({ ...q, examTag: "Regex + AI Refined" }));
-                                                chunkSuccess = true;
-                                                console.log(`Chunk ${i + 1}/${chunks.length} refined with ${modelName}`);
-                                            }
-                                        } catch (e: any) {
-                                            console.warn(`Chunk ${i + 1} attempt ${attempts} (${modelName}) failed: ${e.message}`);
-                                            if (attempts < 2) await delay(1000);
-                                            chunkErrorMsg = e.message;
-                                        }
-                                    }
-
-                                    if (chunkSuccess) break; // Chunk done, move to next chunk
-
-                                } catch (e: any) {
-                                    console.warn(`Chunk ${i + 1} model ${modelName} setup failed.`);
-                                }
-                            }
-
-                            // If Chunk Succeeded, add refined. If failed, add ORIGINAL raw chunk marked as error.
-                            if (chunkSuccess) {
-                                refinedAllQuestions.push(...chunkRefined);
-                            } else {
-                                console.log(`Chunk ${i + 1} failed all attempts. Keeping raw.`);
-                                let cleanError = chunkErrorMsg.replace(/\[.*?\]/g, "").trim().substring(0, 30);
-                                const errorChunk = chunk.map((q: any) => ({ ...q, examTag: `Regex (Raw) - Err: ${cleanError}` }));
-                                refinedAllQuestions.push(...errorChunk);
-                            }
-                        }
-
-                        // Replace the main list with our new mixed list
-                        parsedQuestions = refinedAllQuestions;
-                    }
-
-
                 } catch (regexError: any) {
                     console.error("Regex Parser Failed:", regexError);
 
@@ -317,13 +239,129 @@ export async function POST(req: Request) {
                 }
             }
         }
+        // --- ATTEMPT 4: AI Refinement of Regex Output ---
+        // Only run if we have questions (likely from Regex) and they look raw/incomplete
+        const needsRefinement = parsedQuestions.some((q: any) => q.examTag?.includes("Regex"));
 
+        if (parsedQuestions.length > 0 && needsRefinement) {
+            console.log("Attempting AI Refinement of Regex Output (Concurrent)...")
+
+            // Helper for basic delay
+            const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+            // Models: Try Flash first (fastest), then Pro
+            const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"];
+
+            // Chunking Logic
+            const CHUNK_SIZE = 4;
+            const CONCURRENCY_LIMIT = 3;
+            let refinedAllQuestions: any[] = [];
+
+            // Split into chunks
+            const chunks: any[][] = [];
+            for (let i = 0; i < parsedQuestions.length; i += CHUNK_SIZE) {
+                chunks.push(parsedQuestions.slice(i, i + CHUNK_SIZE));
+            }
+
+            console.log(`Processing ${chunks.length} chunks (Limit: ${CONCURRENCY_LIMIT} concurrent)...`);
+
+            // PROCESS CHUNKS IN PARALLEL BATCHES
+            for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
+                const batchStart = i;
+                const batchChunks = chunks.slice(i, i + CONCURRENCY_LIMIT);
+
+                console.log(`Starting batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1}...`);
+
+                // Create promises for this batch
+                const batchPromises = batchChunks.map(async (chunk, batchIndex) => {
+                    const chunkId = batchStart + batchIndex + 1;
+                    let chunkSuccess = false;
+                    let chunkRefined: any[] = [];
+                    let chunkErrorMsg = "";
+
+                    // Try to refine this individual chunk
+                    for (const modelName of REFINE_MODELS) {
+                        try {
+                            const currentKey = getRotatedKey();
+                            const refineGenAI = new GoogleGenerativeAI(currentKey);
+                            const refineModel = refineGenAI.getGenerativeModel({ model: modelName });
+
+                            const chunkPrompt = `
+                            Refine these specific questions.
+                            Raw: ${JSON.stringify(chunk)}
+                            Strict JSON Schema:
+                            [{
+                              "text": "Question text (LaTeX)",
+                              "optionA": "Opt A", "optionB": "Opt B", "optionC": "Opt C", "optionD": "Opt D",
+                              "correct": "Answer",
+                              "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
+                              "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
+                              "solution": "Solution",
+                              "examTag": "Exam Name",
+                              "hasDiagram": boolean
+                            }]
+                            Rules: Output JSON ONLY.
+                            `;
+
+                            // Retry per model loop
+                            let attempts = 0;
+                            while (attempts < 2 && !chunkSuccess) {
+                                try {
+                                    attempts++;
+                                    const result = await refineModel.generateContent(chunkPrompt);
+                                    const text = result.response.text();
+                                    const json = JSON.parse(cleanJsonString(text));
+
+                                    if (json.length > 0) {
+                                        chunkRefined = json.map((q: any) => ({ ...q, examTag: "Regex + AI Refined" }));
+                                        chunkSuccess = true;
+                                        console.log(`Chunk ${chunkId} success (${modelName})`);
+                                    }
+                                } catch (e: any) {
+                                    console.warn(`Chunk ${chunkId} retry ${attempts} failed: ${e.message}`);
+                                    if (attempts < 2) await delay(1000 + Math.random() * 500); // Backoff with jitter
+                                    chunkErrorMsg = e.message;
+                                }
+                            }
+
+                            if (chunkSuccess) break;
+
+                        } catch (e: any) {
+                            // Model init failed
+                        }
+                    }
+
+                    // Return processed chunk or raw fallback
+                    if (chunkSuccess) {
+                        return chunkRefined;
+                    } else {
+                        console.log(`Chunk ${chunkId} FAILED. Keeping raw.`);
+                        let cleanError = chunkErrorMsg.replace(/\[.*?\]/g, "").trim().substring(0, 30);
+                        return chunk.map((q: any) => ({ ...q, examTag: `Regex (Raw) - Err: ${cleanError}` }));
+                    }
+                });
+
+                // Wait for the entire batch to finish
+                const batchResults = await Promise.all(batchPromises);
+
+                // Collect results
+                batchResults.forEach(res => refinedAllQuestions.push(...res));
+            }
+
+            // Replace the main list
+            parsedQuestions = refinedAllQuestions;
+        }
         return NextResponse.json(parsedQuestions)
 
     } catch (error: any) {
         console.error("Upload Error:", error)
         return new NextResponse(JSON.stringify({ error: `Internal Server Error: ${error.message}` }), { status: 500 })
     } finally {
+        if (fileUri && fileManager) {
+            try {
+                await fileManager.deleteFile(fileUri).catch((e: any) => console.warn("Remote delete failed", e.message));
+            } catch (e) { /* ignore */ }
+        }
         if (tempPath) await unlink(tempPath).catch(e => console.error("Temp delete failed", e))
     }
 }
