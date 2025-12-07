@@ -25,8 +25,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
     const questionStartRegex = /\n\s*(?:(Q\.?|Question|Ex\.?|Example)\s*)?(\d+)\s*[\.:]\s+/gi;
 
     // Regex for Section Headers
-    // e.g. "Comprehension # 1", "TRUE / FALSE", "EXERCISE-02"
-    const sectionHeaderRegex = /\n\s*((?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous)[\w\s\-\#\.]*)\s*\n/gi;
+    // e.g. "Comprehension # 1", "TRUE / FALSE", "EXERCISE-02", "Exercise-05(A)"
+    const sectionHeaderRegex = /\n\s*((?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous|Previous\s*Year|Archives?)[\w\s\-\#\.\(\)\[\]]*)\s*\n/gi;
 
     // We need to interleave section detection with question detection.
     // Easiest is to scan for Sections first and build a map of "StartIndex -> SectionName".
@@ -78,10 +78,24 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             }
         }
 
-        // 2. Look for Options in the truncated block
-        // Matches "(A)" or "(a)" or "A." or "A)" preceded by newline OR space
-        const optionARegex = /(?:^|\s|\n)(?:\([aA]\)|[aA]\.|[aA]\))(?:\s+|$)/;
-        const idxA = textAndOptionsBlock.search(optionARegex);
+        // Detect Option Format: (A) or (1)
+        // Check for (A) first
+        let optionRegex = /(?:^|\s|\n)(?:\([aA]\)|[aA]\.|[aA]\))(?:\s+|$)/;
+        let isNumericOptions = false;
+
+        if (textAndOptionsBlock.search(optionRegex) === -1) {
+            // Check for (1)
+            // Be careful not to match "1." as the question number. 
+            // We look for (1) or 1) specifically? 
+            // " (1) " is safer.
+            const numOptRegex = /(?:^|\s|\n)(?:\(1\)|1\))(?:\s+|$)/;
+            if (textAndOptionsBlock.search(numOptRegex) !== -1) {
+                optionRegex = numOptRegex;
+                isNumericOptions = true;
+            }
+        }
+
+        const idxA = textAndOptionsBlock.search(optionRegex);
 
         if (idxA !== -1) {
             // Options exist
@@ -90,7 +104,13 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
             // Heuristic splitting of options
             // Comprehensive split regex
-            const splitRegex = /(?:^|\s|\n)(?:\([abcdABCD]\)|[abcdABCD]\.|[abcdABCD]\))(?:\s+|$)/;
+            let splitRegex;
+            if (isNumericOptions) {
+                splitRegex = /(?:^|\s|\n)(?:\([1234]\)|[1234]\))(?:\s+|$)/;
+            } else {
+                splitRegex = /(?:^|\s|\n)(?:\([abcdABCD]\)|[abcdABCD]\.|[abcdABCD]\))(?:\s+|$)/;
+            }
+
             const splitOptions = rest.split(splitRegex).filter(s => s.trim().length > 0);
 
             // splitOptions entries should correspond to A, B, C, D in order
@@ -143,12 +163,19 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         processLastQuestion(text.length);
     }
 
-    // --- Post-Processing: Extract Answer Key with Sections ---
-
-    // Data Structure: Section -> { QNum -> Answer }
+    // --- Post-Processing: Scoped Answer Keys with Support for Tables ---
     const scopedKeyMap = new Map<string, Map<string, string>>();
 
-    const normalizeSection = (s: string) => s.toLowerCase().replace(/[\s\-\#\.]/g, "");
+    // Normalization that handles leading zeros and punctuation: "Exercise-05(A)" -> "exercise5a"
+    const normalizeSection = (s: string) => {
+        let clean = s.toLowerCase().replace(/[\s\-\#\.]/g, ""); // "exercise05(a)"
+        // replace "0" if followed by digit? "05" -> "5"
+        clean = clean.replace(/0(\d)/g, "$1");
+        // Remove parens/brackets if they contain just 1 letter? No keep them but stripped?
+        // "exercise5(a)" -> "exercise5a"
+        clean = clean.replace(/[\(\)\[\]]/g, "");
+        return clean;
+    };
 
     // 1. Scan Text for Answer Keys
     const keyHeaderRegex = /(?:CHECK YOUR GRASP|ANSWER KEY|Answer Key|BRAIN TEASERS)/gi;
@@ -159,15 +186,15 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         const keyStartIndex = keyMatch.index;
         // Heuristic: Key block goes until next SectionHeader or End
         // Find next section header that is NOT consistent with being INSIDE the key (e.g. "True/False" IS inside the key usually)
-        // Actually, usually Key is at end. Let's just grab 5000 chars?
-        const keyBlock = cleanText.substring(keyStartIndex, keyStartIndex + 5000); // Limit lookhead
+        // Actually, usually Key is at end. Let's just grab 6000 chars?
+        const keyBlock = cleanText.substring(keyStartIndex, keyStartIndex + 6000);
         console.log("Found Answer Key Block at", keyStartIndex);
 
         // Parse Keys within this block
         // Look for Section Headers INSIDE the Key Block
         // e.g. "True / False \n 1. T"
 
-        const innerSectionRegex = /(?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous)[\w\s\-\#\.]*/gi;
+        const innerSectionRegex = /(?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous|Previous\s*Year|Archives?)[\w\s\-\#\.\(\)\[\]]*/gi;
 
         // Split keyBlock by sections
         let currentKeySection = "General";
@@ -177,24 +204,48 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         // If Key block starts with text before first section, that's "General" (or belongs to previous section)
 
         const processKeySegment = (segment: string, sectionName: string) => {
-            // Parse "1. A", "1. T", "1 -> A"
-            // Regex: Number ... Answer
-            // Matches "1. T", "1. (A)", "1 -> A", "1 A"
-            // Answer tokens: A-D, T, F, Words?
-            const qaRegex = /(\d+)\s*[\.:\)]\s*([A-DA-d\s,]+|T|F|True|False)/g;
-            let m;
-
-            if (!scopedKeyMap.has(normalizeSection(sectionName))) {
-                scopedKeyMap.set(normalizeSection(sectionName), new Map());
+            const normSec = normalizeSection(sectionName);
+            if (!scopedKeyMap.has(normSec)) {
+                scopedKeyMap.set(normSec, new Map());
             }
-            const map = scopedKeyMap.get(normalizeSection(sectionName))!;
+            const map = scopedKeyMap.get(normSec)!;
 
-            while ((m = qaRegex.exec(segment)) !== null) {
-                const qNum = m[1];
-                const ans = m[2].trim();
-                // Validate Answer (A-D, T, F)
-                if (/^[A-Da-d\,\s]+$|^T$|^F$|^True$|^False$/i.test(ans)) {
-                    map.set(qNum, ans.toUpperCase().replace(/\s/g, "")); // condensed "A,C"
+            // 1. Try Table Parsing (Row of Que, Row of Ans)
+            // Look for "Que ... \n Ans ..."
+            const queLineRegex = /Que\.?\s*((?:\d+\s*)+)/i;
+            const ansLineRegex = /(?:Ans|Answer)\.?\s*((?:\d+|[A-D]|\(?[A-D]\)?)+(?:\s+(?:\d+|[A-D]|\(?[A-D]\)?))*)/i;
+
+            // Check if segment contains these clearly
+            const queMatch = segment.match(queLineRegex);
+            const ansMatch = segment.match(ansLineRegex);
+
+            let tableParsed = false;
+            if (queMatch && ansMatch) {
+                // Try to align them
+                const qNums = queMatch[1].match(/\d+/g);
+                // Answers can be '1', '2', 'A', 'B'
+                const aTokens = ansMatch[1].match(/[A-Da-d0-9]+/g);
+
+                if (qNums && aTokens && Math.abs(qNums.length - aTokens.length) <= 3) {
+                    const count = Math.min(qNums.length, aTokens.length);
+                    for (let i = 0; i < count; i++) {
+                        map.set(qNums[i], aTokens[i].toUpperCase().replace(/\s/g, ""));
+                    }
+                    tableParsed = true;
+                }
+            }
+
+            // 2. Fallback to Pair Parsing: "1. A" or "1 -> A" or "1. 3"
+            if (!tableParsed) {
+                // Modified regex to support Numeric Answers "1. 3"
+                // Must ensure we don't match "1. 2" as Q1 Q2.
+                // Constraint: Separator must be [.:\)] or "->"
+                const qaRegex = /(\d+)\s*(?:[\.:\)]|->)\s*([A-DA-d]+|T|F|True|False|[1234])(?=\s|$|\n)/g;
+                let m;
+                while ((m = qaRegex.exec(segment)) !== null) {
+                    const qNum = m[1];
+                    const ans = m[2].trim();
+                    map.set(qNum, ans.toUpperCase().replace(/\s/g, ""));
                 }
             }
         };
@@ -202,7 +253,6 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         while ((innerMatch = innerSectionRegex.exec(keyBlock)) !== null) {
             const segment = keyBlock.substring(lastKeyPos, innerMatch.index);
             processKeySegment(segment, currentKeySection);
-
             currentKeySection = innerMatch[0].trim();
             lastKeyPos = innerMatch.index + innerMatch[0].length;
         }
@@ -218,18 +268,17 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         console.log("Scoped Key Map:", Array.from(scopedKeyMap.keys()));
 
         const exerciseQuestions = questions.filter(q => !(q as any)._isSolvedExample);
-
         exerciseQuestions.forEach(q => {
             const num = (q as any)._tempNumber;
             const sec = (q as any)._section || "General";
+            const normSec = normalizeSection(sec);
 
             // Try Exact Match
-            let map = scopedKeyMap.get(normalizeSection(sec));
+            let map = scopedKeyMap.get(normSec);
 
             // Try Fuzzy Match (keywords)
             if (!map) {
                 // e.g. Question sec "Comprehension # 1", Key sec "Comprehension"
-                const normSec = normalizeSection(sec);
                 for (const [keySecName, m] of scopedKeyMap.entries()) {
                     if (normSec.includes(keySecName) || keySecName.includes(normSec)) {
                         map = m;
@@ -241,15 +290,23 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             if (!map) map = scopedKeyMap.get("general");
 
             if (num && map && map.has(num)) {
-                const ansLetter = map.get(num);
-                q.correct = `(${ansLetter})`;
+                const ansToken = map.get(num); // e.g. "A" or "3"
 
-                // Append text for MCQs
-                if (ansLetter && /^[A-D]$/.test(ansLetter)) {
-                    if (ansLetter === 'A') q.correct += " " + (q.optionA || "");
-                    if (ansLetter === 'B') q.correct += " " + (q.optionB || "");
-                    if (ansLetter === 'C') q.correct += " " + (q.optionC || "");
-                    if (ansLetter === 'D') q.correct += " " + (q.optionD || "");
+                // If Numeric Answer (1-4)
+                if (/^[1-4]$/.test(ansToken!)) {
+                    q.correct = `(${ansToken})`;
+                    const idx = parseInt(ansToken!) - 1; // 0-based
+                    if (idx === 0) q.correct += " " + (q.optionA || "");
+                    if (idx === 1) q.correct += " " + (q.optionB || "");
+                    if (idx === 2) q.correct += " " + (q.optionC || "");
+                    if (idx === 3) q.correct += " " + (q.optionD || "");
+                } else {
+                    // Letter Answer
+                    q.correct = `(${ansToken})`;
+                    if (ansToken === 'A') q.correct += " " + (q.optionA || "");
+                    if (ansToken === 'B') q.correct += " " + (q.optionB || "");
+                    if (ansToken === 'C') q.correct += " " + (q.optionC || "");
+                    if (ansToken === 'D') q.correct += " " + (q.optionD || "");
                 }
             }
         });
