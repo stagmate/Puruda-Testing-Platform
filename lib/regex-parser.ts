@@ -35,7 +35,7 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         // Split block into Question Text, Options, Solution
         // 1. Look for Solution
-        const solMatch = fullBlock.match(/\n\s*(?:Sol\.?|Solution|Ans\.?|Answer)[\.:]\s*(.*)/is);
+        const solMatch = fullBlock.match(/\n\s*(?:Sol\.?|Solution|Ans\.?|Answer)[\.:]\s*([\s\S]*)/i);
         if (solMatch) {
             currentQuestion.solution = solMatch[1].trim();
             // Remove solution from full text to find options
