@@ -1,6 +1,10 @@
+// Simple Round-Robin / Random storage for keys
+// In production, use a proper secrets manager or database
 export const GEMINI_KEYS = [
-    "AIzaSyC-XRAPxnMrpRR1EsPZr9q2fHJC3eFWiY4",
-    "AIzaSyAxxK_I7KRrNk0aezkLqlDLBSiQfNIv0Qs"
+    "AIzaSyBDcWzPaa6iZgVLtZdigwd--xBLQj1Hmrs",
+    "AIzaSyDwVKh4nwzIBur96lkp3htrsmGKtHRBadQ",
+    "AIzaSyDNmly6X5Km1-n3lqTsXLwjH2MTujkS6-A",
+    "AIzaSyDnYFUt18n6YOHkPVMqYOkyyg_xcj19SAM"
 ].filter(key => key && key.length > 0) as string[];
 
 export function getRotatedKey(): string {
