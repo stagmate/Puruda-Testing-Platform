@@ -387,6 +387,17 @@ export function QuestionBankManagement() {
         a.click()
     }
 
+    // Editing State
+    const [editingQuestion, setEditingQuestion] = useState<{ index: number, data: any } | null>(null)
+
+    const handleSaveEdit = () => {
+        if (!editingQuestion) return
+        const updatedQuestions = [...parsedQuestions]
+        updatedQuestions[editingQuestion.index] = editingQuestion.data
+        setParsedQuestions(updatedQuestions)
+        setEditingQuestion(null)
+    }
+
     return (
         <Card>
             <CardHeader>
@@ -394,6 +405,73 @@ export function QuestionBankManagement() {
                 <CardDescription>Manage questions by Hierarchy.</CardDescription>
             </CardHeader>
             <CardContent>
+                {/* Edit Question Dialog */}
+                <Dialog open={!!editingQuestion} onOpenChange={(open) => !open && setEditingQuestion(null)}>
+                    <DialogContent className="max-w-3xl">
+                        <DialogHeader><DialogTitle>Edit Question {editingQuestion ? editingQuestion.index + 1 : ''}</DialogTitle></DialogHeader>
+                        {editingQuestion && (
+                            <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+                                <div className="space-y-2">
+                                    <Label>Question Text</Label>
+                                    <Textarea
+                                        value={editingQuestion.data.text}
+                                        onChange={e => setEditingQuestion({ ...editingQuestion, data: { ...editingQuestion.data, text: e.target.value } })}
+                                        className="h-24"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {["Option A", "Option B", "Option C", "Option D"].map((optLabel, i) => {
+                                        const key = `option${"ABCD"[i]}`
+                                        return (
+                                            <div key={key} className="space-y-1">
+                                                <Label>{optLabel}</Label>
+                                                <Input
+                                                    value={editingQuestion.data[key] || ""}
+                                                    onChange={e => setEditingQuestion({ ...editingQuestion, data: { ...editingQuestion.data, [key]: e.target.value } })}
+                                                />
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Correct Answer</Label>
+                                        <Input
+                                            value={editingQuestion.data.correct}
+                                            onChange={e => setEditingQuestion({ ...editingQuestion, data: { ...editingQuestion.data, correct: e.target.value } })}
+                                            placeholder="e.g. Option A, 10.5"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Difficulty</Label>
+                                        <Select
+                                            value={editingQuestion.data.difficulty}
+                                            onValueChange={v => setEditingQuestion({ ...editingQuestion, data: { ...editingQuestion.data, difficulty: v } })}
+                                        >
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="BEGINNER">Beginner</SelectItem>
+                                                <SelectItem value="INTERMEDIATE">Intermediate</SelectItem>
+                                                <SelectItem value="ADVANCED">Advanced</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Solution</Label>
+                                    <Textarea
+                                        value={editingQuestion.data.solution || ""}
+                                        onChange={e => setEditingQuestion({ ...editingQuestion, data: { ...editingQuestion.data, solution: e.target.value } })}
+                                        placeholder="Detailed solution..."
+                                        className="h-24"
+                                    />
+                                </div>
+                                <Button onClick={handleSaveEdit} className="w-full">Save Changes</Button>
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
+
                 {/* Creation Dialog */}
                 <Dialog open={!!creationType} onOpenChange={() => setCreationType(null)}>
                     <DialogContent>
@@ -550,7 +628,12 @@ export function QuestionBankManagement() {
                                                     <li>C: {q.optionC}</li>
                                                     <li>D: {q.optionD}</li>
                                                 </ul>
-                                                <p className="mt-1 text-green-600 font-medium">Correct: {q.correct}</p>
+                                                <div className="flex justify-between items-start mt-1">
+                                                    <p className="text-green-600 font-medium">Correct: {q.correct}</p>
+                                                    <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setEditingQuestion({ index: i, data: q })}>
+                                                        Edit
+                                                    </Button>
+                                                </div>
                                                 {q.solution && (
                                                     <div className="mt-2 p-2 bg-blue-50 rounded text-muted-foreground">
                                                         <span className="font-semibold text-blue-700">Solution:</span> {q.solution}

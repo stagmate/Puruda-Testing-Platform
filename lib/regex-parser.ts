@@ -42,11 +42,9 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         }
 
         // 2. Look for Options (a), (b), (c), (d) or A., B., C., D.
-        // This is tricky. We'll look for the LAST occurrence of patterns to define boundaries.
-        const optionARegex = /\n\s*(?:\(a\)|[aA]\.|[A]\))\s+/;
-        const optionBRegex = /\n\s*(?:\(b\)|[bB]\.|[B]\))\s+/;
-        const optionCRegex = /\n\s*(?:\(c\)|[cC]\.|[C]\))\s+/;
-        const optionDRegex = /\n\s*(?:\(d\)|[dD]\.|[D]\))\s+/;
+        // Regex relaxed to allow inline options (not just start of line)
+        // Matches "(A)" or "A." or "(a)" preceded by newline OR space
+        const optionARegex = /(?:^|\s|\n)(?:\(a\)|[aA]\.|[A]\))(?:\s+|$)/;
 
         const idxA = fullBlock.search(optionARegex);
 
@@ -56,12 +54,17 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             const rest = fullBlock.substring(idxA);
 
             // Heuristic splitting of options
-            const splitOptions = rest.split(/\n\s*(?:\([abcd]\)|[abcdA-D]\.|[A-D]\))\s+/);
-            // splitOptions[0] is empty or whitespace
-            if (splitOptions.length > 1) currentQuestion.optionA = splitOptions[1]?.trim() || "";
-            if (splitOptions.length > 2) currentQuestion.optionB = splitOptions[2]?.trim() || "";
-            if (splitOptions.length > 3) currentQuestion.optionC = splitOptions[3]?.trim() || "";
-            if (splitOptions.length > 4) currentQuestion.optionD = splitOptions[4]?.trim() || "";
+            // Split by (b)/(B)/B. etc.
+            // We use a comprehensive split regex
+            const splitRegex = /(?:^|\s|\n)(?:\([abcd]\)|[abcdA-D]\.|[A-D]\))(?:\s+|$)/;
+            const splitOptions = rest.split(splitRegex).filter(s => s.trim().length > 0);
+
+            // splitOptions entries should correspond to A, B, C, D in order
+            if (splitOptions.length >= 1) currentQuestion.optionA = splitOptions[0].trim();
+            if (splitOptions.length >= 2) currentQuestion.optionB = splitOptions[1].trim();
+            if (splitOptions.length >= 3) currentQuestion.optionC = splitOptions[2].trim();
+            if (splitOptions.length >= 4) currentQuestion.optionD = splitOptions[3].trim();
+
             currentQuestion.type = "SINGLE";
         } else {
             // No options found -> SUBJECTIVE
