@@ -5,12 +5,17 @@ import { writeFile, unlink } from "fs/promises"
 import { join } from "path"
 import { tmpdir } from "os"
 
-// List of models to try in order of preference (Efficiency -> Stability -> Experimental)
+// @ts-ignore
+const PDFParser = require("pdf2json")
+
+// List of models to try in order of preference
 const MODELS_TO_TRY = ["gemini-1.5-flash-8b", "gemini-1.5-flash", "gemini-2.0-flash"]
 
 export async function POST(req: Request) {
     let tempPath: string | null = null;
     let fileUri: string | null = null;
+    let apiKey = "";
+
     try {
         const formData = await req.formData()
         const file = formData.get("file") as File
@@ -19,7 +24,7 @@ export async function POST(req: Request) {
             return new NextResponse(JSON.stringify({ error: "No file uploaded" }), { status: 400 })
         }
 
-        const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY
+        apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ""
         if (!apiKey) {
             console.error("GOOGLE_API_KEY is missing")
             return new NextResponse(JSON.stringify({ error: "Server configuration error: GOOGLE_API_KEY missing" }), { status: 500 })
@@ -35,89 +40,120 @@ export async function POST(req: Request) {
         tempPath = join(tmpdir(), `upload-${Date.now()}.pdf`)
         await writeFile(tempPath, buffer)
 
-        // Upload to Gemini
+        // Strategy:
+        // 1. Try Native PDF Upload + Parsing (Multimodal)
+        // 2. If Upload or Parse fails (Quota/Error), Fallback to Local Text Extraction + Parsing (Text Only)
+
+        let parsedQuestions = []
+        let nativePdfSuccess = false;
+        let lastError = null;
+
+        // --- ATTEMPT 1: Native PDF (Multimodal) ---
         try {
+            console.log("Attempting Native PDF Upload...")
             const uploadResponse = await fileManager.uploadFile(tempPath, {
                 mimeType: "application/pdf",
                 displayName: file.name,
             })
             fileUri = uploadResponse.file.uri
             console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${fileUri}`)
-        } catch (uploadError: any) {
-            console.error("Gemini File Upload Error:", uploadError)
-            return new NextResponse(JSON.stringify({ error: `Gemini Upload Failed: ${uploadError.message}` }), { status: 500 })
+
+            const prompt = `
+            Extract ALL multiple-choice questions from this PDF into a JSON array.
+            Strict JSON Schema:
+            [{
+              "text": "Question text (LaTeX for math)",
+              "optionA": "Option A", "optionB": "Option B", "optionC": "Option C", "optionD": "Option D",
+              "correct": "A/B/C/D or value",
+              "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
+              "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
+              "solution": "Brief solution (LaTeX)",
+              "examTag": "Exam Name",
+              "hasDiagram": boolean
+            }]
+            Rules: Output JSON ONLY. Infer options/difficulty if missing. Use Latex for Math.
+            `
+
+            for (const modelName of MODELS_TO_TRY) {
+                try {
+                    console.log(`Attempting Multimodal parse with ${modelName}`)
+                    const model = genAI.getGenerativeModel({ model: modelName })
+
+                    const result = await model.generateContent([
+                        { fileData: { mimeType: "application/pdf", fileUri: fileUri } },
+                        { text: prompt },
+                    ])
+
+                    const responseText = result.response.text()
+                    parsedQuestions = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim())
+                    nativePdfSuccess = true;
+                    break;
+                } catch (e: any) {
+                    console.warn(`Multimodal ${modelName} failed:`, e.message)
+                    lastError = e;
+                    if (e.message?.includes("404")) continue; // Try next model if not found
+                    if (e.message?.includes("429")) throw e; // Quota hit? Break to fallback immediately
+                }
+            }
+        } catch (e: any) {
+            console.error("Native PDF Parsing Failed completely:", e.message)
+            lastError = e;
         }
 
-        // Prompt Gemini to parse questions
-        const prompt = `
-        Content Parsing Task:
-        Extract ALL multiple-choice questions from this PDF into a JSON array.
-        
-        Strict JSON Schema:
-        [{
-          "text": "Question text (LaTeX for math)",
-          "optionA": "Option A", "optionB": "Option B", "optionC": "Option C", "optionD": "Option D",
-          "correct": "A/B/C/D or value",
-          "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
-          "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
-          "solution": "Brief solution (LaTeX)",
-          "examTag": "Exam Name",
-          "hasDiagram": boolean
-        }]
+        // --- ATTEMPT 2: Text-Only Fallback ---
+        if (!nativePdfSuccess) {
+            console.log("Falling back to Text-Only Parsing (Quota/Error Recovery)...")
 
-        Rules:
-        - Output JSON ONLY. No markdown formatted text.
-        - Infer options/difficulty if missing.
-        - Use Latex for Math.
-        `
-
-        let parsedQuestions = []
-        let lastError = null;
-        let success = false;
-
-        for (const modelName of MODELS_TO_TRY) {
             try {
-                console.log(`Attempting parse with model: ${modelName}`)
-                const model = genAI.getGenerativeModel({ model: modelName })
+                // Extract Text Locally
+                const pdfParser = new PDFParser(null, 1);
+                const pdfText = await new Promise<string>((resolve, reject) => {
+                    pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+                    pdfParser.on("pdfParser_dataReady", () => {
+                        resolve(pdfParser.getRawTextContent());
+                    });
+                    pdfParser.parseBuffer(buffer);
+                });
 
-                const result = await model.generateContent([
-                    {
-                        fileData: {
-                            mimeType: "application/pdf",
-                            fileUri: fileUri,
-                        },
-                    },
-                    { text: prompt },
-                ])
+                if (!pdfText || pdfText.length < 50) {
+                    throw new Error("Extracted text is too empty.")
+                }
 
+                const prompt = `
+                I have extracted text from a PDF. Please parse questions from it.
+                Text Content:
+                ${pdfText.substring(0, 30000)}
+
+                Strict JSON Schema:
+                [{
+                  "text": "Question text (LaTeX for math)",
+                  "optionA": "Option A", "optionB": "Option B", "optionC": "Option C", "optionD": "Option D",
+                  "correct": "A/B/C/D or value",
+                  "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
+                  "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
+                  "solution": "Brief solution (LaTeX)",
+                  "examTag": "Exam Name",
+                  "hasDiagram": boolean
+                }]
+                Rules: Output JSON ONLY. Infer options/difficulty if missing. Use Latex for Math.
+                `
+
+                // Try with the most efficient model first
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" })
+                const result = await model.generateContent(prompt)
                 const responseText = result.response.text()
-                const cleanedText = responseText.replace(/```json/g, "").replace(/```/g, "").trim()
-                parsedQuestions = JSON.parse(cleanedText)
-                success = true;
-                break; // Parsing successful, exit loop
+                parsedQuestions = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim())
 
-            } catch (error: any) {
-                console.warn(`Model ${modelName} failed:`, error.message)
-                lastError = error;
-                // If it's a 429, we might want to try the next model? 
-                // Actually, different models often share the same quota bucket (e.g. all Flash), 
-                // but sometimes 1.5 Flash 8b has separate throughput. Worth a try.
-                // If 404, definitely try next.
+                // Add a flag to indicate this was a text fallback
+                parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: (q.examTag ? q.examTag + " (Text Fallback)" : "Text Fallback") }))
+
+            } catch (fallbackError: any) {
+                console.error("Text Fallback Failed:", fallbackError)
+                return new NextResponse(JSON.stringify({
+                    error: "All parsing methods failed. Quota limits may be reached.",
+                    details: `Multimodal Error: ${lastError?.message}. Fallback Error: ${fallbackError.message}`
+                }), { status: 500 })
             }
-        }
-
-        if (!success) {
-            let errorMsg = "AI Model failed to process the PDF."
-            if (lastError?.message?.includes("429") || lastError?.message?.includes("Quota")) {
-                errorMsg = `Daily Quota Exceeded. Please try a smaller PDF or wait. (Error: 429)`
-            } else if (lastError?.message?.includes("404")) {
-                errorMsg = `AI Model not found or not enabled. Check project settings.`
-            } else if (lastError?.message?.includes("JSON")) {
-                errorMsg = `Failed to parse AI response (JSON Error). The PDF might be too complex.`
-            }
-
-            console.error("All models failed. Last error:", lastError)
-            return new NextResponse(JSON.stringify({ error: errorMsg, details: lastError?.message }), { status: 500 })
         }
 
         return NextResponse.json(parsedQuestions)
@@ -127,6 +163,5 @@ export async function POST(req: Request) {
         return new NextResponse(JSON.stringify({ error: `Internal Server Error: ${error.message}` }), { status: 500 })
     } finally {
         if (tempPath) await unlink(tempPath).catch(e => console.error("Temp delete failed", e))
-        // Note: Production cleanup of fileUri would go here
     }
 }
