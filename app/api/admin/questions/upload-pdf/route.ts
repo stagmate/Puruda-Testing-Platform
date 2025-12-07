@@ -138,8 +138,8 @@ export async function POST(req: Request) {
                 Rules: Output JSON ONLY. Infer options/difficulty if missing. Use Latex for Math.
                 `
 
-                // Try with the most efficient model first
-                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" })
+                // Try with the most reliable standard model
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
                 const result = await model.generateContent(prompt)
                 const responseText = result.response.text()
                 parsedQuestions = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim())
