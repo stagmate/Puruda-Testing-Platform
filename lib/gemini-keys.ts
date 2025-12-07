@@ -2,7 +2,9 @@ export const GEMINI_KEYS = [
     process.env.GOOGLE_API_KEY,
     process.env.GEMINI_API_KEY,
     "AIzaSyCmAJpiqcQjFpraVRgsrYmhg-HRnlyp4HU",
-    "AIzaSyAE97vL6nKleWv9YtwkSU4ieYR5iaZkBy8"
+    "AIzaSyAE97vL6nKleWv9YtwkSU4ieYR5iaZkBy8",
+    "AIzaSyBZA94mfnQ0VCtJUyijg4sKS75n3qLeeWo",
+    "AIzaSyArH5iKeB4qEha49w58g6QYkzHMoZ50wYM"
 ].filter(key => key && key.length > 0) as string[];
 
 export function getRotatedKey(): string {
