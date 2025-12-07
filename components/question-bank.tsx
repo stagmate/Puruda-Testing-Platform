@@ -398,6 +398,12 @@ export function QuestionBankManagement() {
         setEditingQuestion(null)
     }
 
+    const handleDeleteParsedQuestion = (index: number) => {
+        const updatedQuestions = [...parsedQuestions]
+        updatedQuestions.splice(index, 1)
+        setParsedQuestions(updatedQuestions)
+    }
+
     return (
         <Card>
             <CardHeader>
@@ -630,9 +636,14 @@ export function QuestionBankManagement() {
                                                 </ul>
                                                 <div className="flex justify-between items-start mt-1">
                                                     <p className="text-green-600 font-medium">Correct: {q.correct}</p>
-                                                    <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setEditingQuestion({ index: i, data: q })}>
-                                                        Edit
-                                                    </Button>
+                                                    <div className="flex gap-2">
+                                                        <Button variant="outline" size="sm" className="h-6 text-xs text-red-600 hover:text-red-700" onClick={() => handleDeleteParsedQuestion(i)}>
+                                                            Delete
+                                                        </Button>
+                                                        <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setEditingQuestion({ index: i, data: q })}>
+                                                            Edit
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                                 {q.solution && (
                                                     <div className="mt-2 p-2 bg-blue-50 rounded text-muted-foreground">

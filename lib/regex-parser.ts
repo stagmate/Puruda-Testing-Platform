@@ -75,9 +75,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         // Split block into Question Text, Options, Solution
         // 1. Look for Solution
-        // We find the SOLUTION first so we can remove it from the block.
-        // This prevents "Sol. ..." from being merged into Option D.
-        const solMatch = fullBlock.match(/\n\s*(?:Sol\.?|Solution|Ans\.?|Answer)[\.:]\s*([\s\S]*)/i);
+        // Expanded keywords: Sol, Solution, Ans, Answer, Hint, Note, Explanation, Reason
+        const solMatch = fullBlock.match(/\n\s*(?:Sol\.?|Solution|Ans\.?|Answer|Hint|Note|Explanation|Reason)[\.:]\s*([\s\S]*)/i);
         let textAndOptionsBlock = fullBlock;
 
         // If it was already flagged as a Solved Example (by prefix "Ex"), we expect a solution.
