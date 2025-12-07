@@ -209,9 +209,10 @@ export async function POST(req: Request) {
                     if (parsedQuestions.length > 0) {
                         console.log("Attempting AI Refinement of Regex Output...")
                         let refineSuccess = false;
+                        let refineErrorMsg = "";
 
-                        // Models to try for refinement
-                        const REFINE_MODELS = ["gemini-2.0-flash", "gemini-1.5-pro"];
+                        // Switch back to 1.5-flash as primary (most stable/quota-friendly)
+                        const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"];
 
                         for (const modelName of REFINE_MODELS) {
                             try {
@@ -225,8 +226,8 @@ export async function POST(req: Request) {
                                 Please REFINE and RESTRUCTURE them into clean JSON.
 
                                 Raw Questions:
-                                ${JSON.stringify(parsedQuestions.slice(0, 40))} 
-                                // Limit to 40 to ensure we fit in context window.
+                                ${JSON.stringify(parsedQuestions.slice(0, 15))} 
+                                // Limit to 15 to ensure strict JSON adherence and avoid token limits.
 
                                 Strict JSON Schema:
                                 [{
@@ -264,13 +265,15 @@ export async function POST(req: Request) {
 
                             } catch (refineError: any) {
                                 console.warn(`Refinement with ${modelName} failed:`, refineError.message);
+                                refineErrorMsg = refineError.message; // Capture last error
                                 // Continue to next model
                             }
                         }
 
                         if (!refineSuccess) {
-                            // If all refinement attempts fail, keep raw but mark it
-                            parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: "Regex (Raw) - AI Failed" }))
+                            // If all refinement attempts fail, keep raw but mark it with specific error
+                            const shortError = refineErrorMsg.includes("429") ? "Quota" : refineErrorMsg.includes("404") ? "Model" : "Error";
+                            parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: `Regex (Raw) - AI Failed (${shortError})` }))
                         }
                     }
 
