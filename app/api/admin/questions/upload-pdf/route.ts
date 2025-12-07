@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-const PDFParser = require("pdf2json")
+import { GoogleAIFileManager } from "@google/generative-ai/server"
+import { writeFile, unlink } from "fs/promises"
+import { join } from "path"
+import { tmpdir } from "os"
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "")
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || "")
 
 export async function POST(req: Request) {
     try {
@@ -11,84 +15,91 @@ export async function POST(req: Request) {
         const file = formData.get("file") as File
 
         if (!file) {
-            console.error("No file uploaded")
             return new NextResponse("No file uploaded", { status: 400 })
         }
 
         if (!process.env.GEMINI_API_KEY) {
-            console.error("GEMINI_API_KEY is missing")
             return new NextResponse("Server configuration error: GEMINI_API_KEY missing", { status: 500 })
         }
 
-        // Convert file to buffer
-        const arrayBuffer = await file.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
+        // Save file temporarily
+        const bytes = await file.arrayBuffer()
+        const buffer = Buffer.from(bytes)
+        const tempPath = join(tmpdir(), `upload-${Date.now()}.pdf`)
+        await writeFile(tempPath, buffer)
 
-        // Extract text from PDF using pdf2json
-        const pdfParser = new PDFParser(null, 1); // 1 = text only
+        // Upload to Gemini
+        const uploadResponse = await fileManager.uploadFile(tempPath, {
+            mimeType: "application/pdf",
+            displayName: file.name,
+        })
 
-        const pdfText = await new Promise<string>((resolve, reject) => {
-            pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
-            pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
-                // pdf2json returns text in a weird format (URI encoded), usually better to use getRawTextContent() which prints to console or file, 
-                // but strictly speaking, `getRawTextContent` is a method on the instance.
-                // Actually, `pdf2json`'s data structure is complex. 
-                // A better approach with pdf2json for raw text is to just use the text content.
-                // `pdfParser.getRawTextContent()` returns the text.
-                try {
-                    const text = pdfParser.getRawTextContent();
-                    resolve(text);
-                } catch (e) {
-                    reject(e);
-                }
-            });
+        console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${uploadResponse.file.uri}`)
 
-            // Parse
-            pdfParser.parseBuffer(buffer);
-        });
+        // Wait for file to be active (usually instant for small PDFs, but good practice)
+        // For Flash model, we can often just proceed.
 
         // Prompt Gemini to parse questions
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
 
         const prompt = `
-        You are an AI assistant that extracts multiple-choice questions from raw text.
-        Extract all questions from the following text and return them as a JSON array.
-        
-        The JSON structure for each question should be:
-        {
-            "text": "The question stem...",
-            "optionA": "Option A content",
+        You are an advanced educational AI parser. Your goal is to extract questions from the uploaded PDF document with high precision, preserving mathematical notation and structure.
+
+        **Task:**
+        Extract all questions, including their options, correct answers (if indicated), solution text (if provided), and metadata.
+
+        **Schema (JSON Array):**
+        [
+          {
+            "text": "Full question text. Use LaTeX for math (e.g., $E=mc^2$). Include any passage text if it's a comprehension question.",
+            "optionA": "Option A content (LaTeX supported)",
             "optionB": "Option B content",
             "optionC": "Option C content",
             "optionD": "Option D content",
-            "correct": "The correct answer value (e.g. 'Option A', 'Option B', or the actual text if ambiguous)",
-            "difficulty": "BEGINNER" | "INTERMEDIATE" | "ADVANCED",
-            "type": "SINGLE" | "MULTIPLE" | "INTEGER"
-        }
+            "correct": "Correct option label (A/B/C/D) or value. If not found, use empty string.",
+            "difficulty": "BEGINNER" | "INTERMEDIATE" | "ADVANCED" (Infer based on context e.g., 'Exercise-01' is Beginner, 'JEE Advanced' is Advanced)",
+            "type": "SINGLE" | "MULTIPLE" | "INTEGER" | "SUBJECTIVE",
+            "solution": "Step-by-step solution if available in the document. Use LaTeX.",
+            "examTag": "Tag like 'JEE Main', 'AIEEE' if explicitly mentioned.",
+            "hasDiagram": true/false (Set to true if the question refers to a diagram/graph)
+          }
+        ]
 
-        Rules:
-        1. If options are not explicitly labeled A, B, C, D, infer them from the order.
-        2. Infer difficulty based on complexity if not specified.
-        3. If no correct answer is marked, leave "correct" as an empty string.
-        4. Remove question numbers (e.g., "1.", "Q1") from the "text" field.
-        5. Return ONLY the JSON array. Do not include markdown formatting (like \`\`\`json).
+        **Rules:**
+        1. **Math/Chem:** STRICTLY preserve all equations in LaTeX format. Do not simplify or convert to plain text options unless simple.
+           - Example: Use $\Delta S^{\circ}$ not "Delta S degree".
+        2. **Layout:** Distinctly separation "Solved Examples" from "Exercises". Extract both.
+        3. **Answer Keys:** If an answer key table exists at the end of the chapter, use it to populate the 'correct' field for the corresponding questions.
+        4. **Images:** If a question has a "Fig." or refers to a diagram, set "hasDiagram": true. (Note: You cannot extract the image file itself yet, just flag it).
+        5. **Output:** Return ONLY the raw JSON array. No markdown code blocks.
 
-        Input Text:
-        ${pdfText.substring(0, 30000)} 
+        Parse the entire document.
         `
 
-        const result = await model.generateContent(prompt)
-        const responseText = result.response.text()
+        const result = await model.generateContent([
+            {
+                fileData: {
+                    mimeType: uploadResponse.file.mimeType,
+                    fileUri: uploadResponse.file.uri,
+                },
+            },
+            { text: prompt },
+        ])
 
-        // Clean up markdown code blocks if present
+        const responseText = result.response.text()
         const cleanedText = responseText.replace(/```json/g, "").replace(/```/g, "").trim()
+
+        // Cleanup: Delete temp file and remove from Gemini Storage to save quota
+        await unlink(tempPath).catch(e => console.error("Temp delete failed", e))
+        // Note: In production you should delete the file from Gemini too using fileManager.deleteFile(name)
+        // fileManager.deleteFile(uploadResponse.file.name).catch(e => console.error("Gemini delete failed", e))
 
         let parsedQuestions = []
         try {
             parsedQuestions = JSON.parse(cleanedText)
         } catch (error) {
             console.error("JSON Parse Error:", error, "Response:", cleanedText)
-            return new NextResponse("Failed to parse AI response", { status: 500 })
+            return new NextResponse("Failed to parse AI response. The PDF might be too large or the response format was invalid.", { status: 500 })
         }
 
         return NextResponse.json(parsedQuestions)

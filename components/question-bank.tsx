@@ -533,7 +533,16 @@ export function QuestionBankManagement() {
                                                     <li>C: {q.optionC}</li>
                                                     <li>D: {q.optionD}</li>
                                                 </ul>
-                                                <p className="mt-1 text-green-600">Correct: {q.correct}</p>
+                                                <p className="mt-1 text-green-600 font-medium">Correct: {q.correct}</p>
+                                                {q.solution && (
+                                                    <div className="mt-2 p-2 bg-blue-50 rounded text-muted-foreground">
+                                                        <span className="font-semibold text-blue-700">Solution:</span> {q.solution}
+                                                    </div>
+                                                )}
+                                                <div className="flex gap-2 mt-2">
+                                                    {q.examTag && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded">{q.examTag}</span>}
+                                                    {q.hasDiagram && <span className="text-[10px] bg-purple-100 text-purple-800 px-1 rounded">Has Diagram</span>}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
