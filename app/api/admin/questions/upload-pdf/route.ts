@@ -63,19 +63,30 @@ export async function POST(req: Request) {
             console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${fileUri}`)
 
             const prompt = `
-            Extract ALL multiple-choice questions from this PDF into a JSON array.
+            Extract ALL questions from this PDF into a JSON array, including:
+            1. Multiple Choice Questions (MCQs)
+            2. Solved Examples (Treat as questions with provided solutions)
+            3. Subjective / Numerical Problems (No options)
+
             Strict JSON Schema:
             [{
-              "text": "Question text (LaTeX for math)",
-              "optionA": "Option A", "optionB": "Option B", "optionC": "Option C", "optionD": "Option D",
-              "correct": "A/B/C/D or value",
+              "text": "Question text (LaTeX for math). Include values provided in the question.",
+              "optionA": "Option A (or null if subjective)", 
+              "optionB": "Option B (or null)", 
+              "optionC": "Option C (or null)", 
+              "optionD": "Option D (or null)",
+              "correct": "Answer option or the calculated value if subjective",
               "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
               "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
-              "solution": "Brief solution (LaTeX)",
+              "solution": "Detailed solution/steps to reach the answer (LaTeX)",
               "examTag": "Exam Name",
               "hasDiagram": boolean
             }]
-            Rules: Output JSON ONLY. Infer options/difficulty if missing. Use Latex for Math.
+            Rules: 
+            - Output JSON ONLY. 
+            - If it's a Solved Example, the "solution" field is CRITICAL. Extract the full solution there.
+            - If no options are present, set type to "SUBJECTIVE" and options to null strings.
+            - Use Latex for ALL Math.
             `
 
             for (const modelName of MODELS_TO_TRY) {
@@ -124,22 +135,26 @@ export async function POST(req: Request) {
                 }
 
                 const prompt = `
-                I have extracted text from a PDF. Please parse questions from it.
+                I have extracted text from a PDF. Please parse ALL questions from it (MCQs, Examples, Subjective).
                 Text Content:
                 ${pdfText.substring(0, 30000)}
 
                 Strict JSON Schema:
                 [{
                   "text": "Question text (LaTeX for math)",
-                  "optionA": "Option A", "optionB": "Option B", "optionC": "Option C", "optionD": "Option D",
-                  "correct": "A/B/C/D or value",
+                  "optionA": "Option A (or null)", "optionB": "Option B (or null)", "optionC": "Option C (or null)", "optionD": "Option D (or null)",
+                  "correct": "Answer/Value",
                   "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
                   "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
-                  "solution": "Brief solution (LaTeX)",
+                  "solution": "Full Solution (LaTeX)",
                   "examTag": "Exam Name",
                   "hasDiagram": boolean
                 }]
-                Rules: Output JSON ONLY. Infer options/difficulty if missing. Use Latex for Math.
+                Rules: 
+                - Output JSON ONLY. 
+                - Capture Solved Examples as questions. 
+                - If no options, set type="SUBJECTIVE".
+                - Use Latex for Math.
                 `
 
                 // Try Flash first (Fast/Standard)
