@@ -19,8 +19,9 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
     const cleanText = text.replace(/\r\n/g, "\n").replace(/\t/g, " ");
 
     // Regex to find Question Start
-    // Matches: "1.", "Q1.", "Ex. 1", "Example 1", "Question 1" at start of line
-    const questionStartRegex = /\n\s*(?:Q\.?|Question|Ex\.?|Example)?\s*(\d+)[\.:]\s+/gi;
+    // Matches: "1.", "1 .", "Q1.", "Ex. 1", "Example 1" at start of line
+    // Relaxed to allow space between number and dot: (\d+)\s*[\.:]
+    const questionStartRegex = /\n\s*(?:Q\.?|Question|Ex\.?|Example)?\s*(\d+)\s*[\.:]\s+/gi;
 
     let match;
     let lastIndex = 0;
