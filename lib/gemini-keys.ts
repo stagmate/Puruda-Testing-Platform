@@ -1,6 +1,6 @@
 export const GEMINI_KEYS = [
-    "AIzaSyBZA94mfnQ0VCtJUyijg4sKS75n3qLeeWo",
-    "AIzaSyArH5iKeB4qEha49w58g6QYkzHMoZ50wYM"
+    "AIzaSyC-XRAPxnMrpRR1EsPZr9q2fHJC3eFWiY4",
+    "AIzaSyAxxK_I7KRrNk0aezkLqlDLBSiQfNIv0Qs"
 ].filter(key => key && key.length > 0) as string[];
 
 export function getRotatedKey(): string {
