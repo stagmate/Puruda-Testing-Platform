@@ -211,6 +211,9 @@ export async function POST(req: Request) {
                         let refineSuccess = false;
                         let refineErrorMsg = "";
 
+                        // Helper for basic delay
+                        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
                         // Switch back to 1.5-flash as primary, but add gemini-pro (legacy) as valid backup
                         const REFINE_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
 
@@ -226,8 +229,8 @@ export async function POST(req: Request) {
                                 Please REFINE and RESTRUCTURE them into clean JSON.
 
                                 Raw Questions:
-                                ${JSON.stringify(parsedQuestions.slice(0, 15))} 
-                                // Limit to 15 to ensure strict JSON adherence.
+                                ${JSON.stringify(parsedQuestions.slice(0, 10))} 
+                                // Limit to 10 to ensure strict JSON adherence and avoid payload issues.
 
                                 Strict JSON Schema:
                                 [{
@@ -250,21 +253,38 @@ export async function POST(req: Request) {
                                 - GENERATE solutions if missing.
                                 `;
 
-                                const refineResult = await refineModel.generateContent(fullRefinePrompt);
-                                const refineText = refineResult.response.text();
-                                const refinedJson = JSON.parse(refineText.replace(/```json/g, "").replace(/```/g, "").trim());
+                                // Retry Logic: Try up to 2 times per model
+                                let attempts = 0;
+                                let success = false;
+                                let loopError: any = null;
 
-                                // Merge/Replace
-                                parsedQuestions = refinedJson.map((q: any) => ({
-                                    ...q,
-                                    examTag: "Regex + AI Refined"
-                                }));
-                                console.log(`AI Refinement Successful with ${modelName}!`);
-                                refineSuccess = true;
-                                break; // Success!
+                                while (attempts < 2 && !success) {
+                                    try {
+                                        attempts++;
+                                        const refineResult = await refineModel.generateContent(fullRefinePrompt);
+                                        const refineText = refineResult.response.text();
+                                        const refinedJson = JSON.parse(refineText.replace(/```json/g, "").replace(/```/g, "").trim());
+
+                                        // Merge/Replace
+                                        parsedQuestions = refinedJson.map((q: any) => ({
+                                            ...q,
+                                            examTag: "Regex + AI Refined"
+                                        }));
+                                        console.log(`AI Refinement Successful with ${modelName} (Attempt ${attempts})!`);
+                                        refineSuccess = true;
+                                        success = true;
+                                    } catch (e: any) {
+                                        loopError = e;
+                                        console.warn(`Attempt ${attempts} with ${modelName} failed: ${e.message}`);
+                                        if (attempts < 2) await delay(1000); // Wait 1s before retry
+                                    }
+                                }
+
+                                if (success) break;
+                                throw loopError; // Re-throw to catch block below to try next model
 
                             } catch (refineError: any) {
-                                console.warn(`Refinement with ${modelName} failed:`, refineError.message);
+                                console.warn(`Refinement with ${modelName} failed all attempts:`, refineError.message);
                                 refineErrorMsg = refineError.message; // Capture last error
                                 // Continue to next model
                             }
@@ -272,8 +292,11 @@ export async function POST(req: Request) {
 
                         if (!refineSuccess) {
                             // Show the ACTUAL error message in the tag so we can debug it
-                            // e.g. "404 Not Found" or "API Key Invalid"
-                            const cleanError = refineErrorMsg.replace(/\[.*?\]/g, "").substring(0, 30);
+                            // Clean up the error message for display
+                            let cleanError = refineErrorMsg.replace(/\[.*?\]/g, "").trim();
+                            if (cleanError.startsWith(":")) cleanError = cleanError.substring(1).trim();
+                            if (cleanError.length > 30) cleanError = cleanError.substring(0, 30) + "...";
+
                             parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: `Regex (Raw) - Err: ${cleanError}` }))
                         }
                     }
