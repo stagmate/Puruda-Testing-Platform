@@ -321,11 +321,12 @@ export function QuestionBankManagement() {
                 setParsedQuestions(data)
                 alert(`Successfully parsed ${data.length} questions! Please review and save.`)
             } else {
-                alert("Failed to parse PDF. Check console.")
+                const errData = await res.json().catch(() => ({}))
+                alert(`Failed to parse PDF: ${errData.error || "Unknown Error"}`)
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e)
-            alert("Error uploading PDF")
+            alert(`Error uploading PDF: ${e.message}`)
         }
         setIsParsing(false)
     }

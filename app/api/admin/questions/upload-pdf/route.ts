@@ -5,39 +5,46 @@ import { writeFile, unlink } from "fs/promises"
 import { join } from "path"
 import { tmpdir } from "os"
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "")
-const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || "")
-
 export async function POST(req: Request) {
+    let tempPath: string | null = null;
     try {
         const formData = await req.formData()
         const file = formData.get("file") as File
 
         if (!file) {
-            return new NextResponse("No file uploaded", { status: 400 })
+            return new NextResponse(JSON.stringify({ error: "No file uploaded" }), { status: 400 })
         }
 
-        if (!process.env.GEMINI_API_KEY) {
-            return new NextResponse("Server configuration error: GEMINI_API_KEY missing", { status: 500 })
+        const apiKey = process.env.GEMINI_API_KEY
+        if (!apiKey) {
+            console.error("GEMINI_API_KEY is missing")
+            return new NextResponse(JSON.stringify({ error: "Server configuration error: GEMINI_API_KEY missing" }), { status: 500 })
         }
+
+        // Initialize Gemini
+        const genAI = new GoogleGenerativeAI(apiKey)
+        const fileManager = new GoogleAIFileManager(apiKey)
 
         // Save file temporarily
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
-        const tempPath = join(tmpdir(), `upload-${Date.now()}.pdf`)
+        tempPath = join(tmpdir(), `upload-${Date.now()}.pdf`)
         await writeFile(tempPath, buffer)
 
+        console.log(`Saved temp file to ${tempPath}`)
+
         // Upload to Gemini
-        const uploadResponse = await fileManager.uploadFile(tempPath, {
-            mimeType: "application/pdf",
-            displayName: file.name,
-        })
-
-        console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${uploadResponse.file.uri}`)
-
-        // Wait for file to be active (usually instant for small PDFs, but good practice)
-        // For Flash model, we can often just proceed.
+        let uploadResponse;
+        try {
+            uploadResponse = await fileManager.uploadFile(tempPath, {
+                mimeType: "application/pdf",
+                displayName: file.name,
+            })
+            console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${uploadResponse.file.uri}`)
+        } catch (uploadError: any) {
+            console.error("Gemini File Upload Error:", uploadError)
+            return new NextResponse(JSON.stringify({ error: `Gemini Upload Failed: ${uploadError.message}` }), { status: 500 })
+        }
 
         // Prompt Gemini to parse questions
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
@@ -89,23 +96,22 @@ export async function POST(req: Request) {
         const responseText = result.response.text()
         const cleanedText = responseText.replace(/```json/g, "").replace(/```/g, "").trim()
 
-        // Cleanup: Delete temp file and remove from Gemini Storage to save quota
-        await unlink(tempPath).catch(e => console.error("Temp delete failed", e))
-        // Note: In production you should delete the file from Gemini too using fileManager.deleteFile(name)
-        // fileManager.deleteFile(uploadResponse.file.name).catch(e => console.error("Gemini delete failed", e))
-
         let parsedQuestions = []
         try {
             parsedQuestions = JSON.parse(cleanedText)
         } catch (error) {
             console.error("JSON Parse Error:", error, "Response:", cleanedText)
-            return new NextResponse("Failed to parse AI response. The PDF might be too large or the response format was invalid.", { status: 500 })
+            return new NextResponse(JSON.stringify({ error: "Failed to parse AI response. The response was not valid JSON.", details: cleanedText.substring(0, 100) }), { status: 500 })
         }
 
         return NextResponse.json(parsedQuestions)
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Upload Error:", error)
-        return new NextResponse("Internal Server Error", { status: 500 })
+        return new NextResponse(JSON.stringify({ error: `Internal Server Error: ${error.message}` }), { status: 500 })
+    } finally {
+        if (tempPath) {
+            await unlink(tempPath).catch(e => console.error("Temp delete failed", e))
+        }
     }
 }
