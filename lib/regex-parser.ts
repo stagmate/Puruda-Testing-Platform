@@ -20,13 +20,13 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
     // Regex to find Question Start
     // Matches: "1.", "1 .", "Q1.", "Ex. 1", "Example 1" at start of line
-    // Relaxed to allow space between number and dot: (\d+)\s*[\.:]
-    const questionStartRegex = /\n\s*(?:Q\.?|Question|Ex\.?|Example)?\s*(\d+)\s*[\.:]\s+/gi;
+    // Capture Group 1: Prefix (Ex/Example/Q/Question) - Optional
+    // Capture Group 2: Number
+    const questionStartRegex = /\n\s*(?:(Q\.?|Question|Ex\.?|Example)\s*)?(\d+)\s*[\.:]\s+/gi;
 
     let match;
     let lastIndex = 0;
-    let currentQuestion: Partial<ExtractedQuestion> | null = null;
-    let currentNumber = "";
+    let currentQuestion: Partial<ExtractedQuestion> & { _tempNumber?: string, _isSolvedExample?: boolean } | null = null;
 
     // Helper to process the previous question block before starting a new one
     const processLastQuestion = (endIndex: number) => {
@@ -41,6 +41,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         const solMatch = fullBlock.match(/\n\s*(?:Sol\.?|Solution|Ans\.?|Answer)[\.:]\s*([\s\S]*)/i);
         let textAndOptionsBlock = fullBlock;
 
+        // If it was already flagged as a Solved Example (by prefix "Ex"), we expect a solution.
+        // Even if not flagged, if we find "Sol.", it serves as one.
         if (solMatch) {
             currentQuestion.solution = solMatch[1].trim();
             // CRITICAL: Remove solution from the block we use to find text/options
@@ -59,9 +61,10 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         if (idxA !== -1) {
             // Options exist
             currentQuestion.text = textAndOptionsBlock.substring(0, idxA).trim();
-            const rest = textAndOptionsBlock.substring(idxA);
+            const rest = textAndOptionsBlock.substring(idxA); // Options block
 
             // Heuristic splitting of options
+            // Comprehensive split regex
             const splitRegex = /(?:^|\s|\n)(?:\([abcdABCD]\)|[abcdABCD]\.|[abcdABCD]\))(?:\s+|$)/;
             const splitOptions = rest.split(splitRegex).filter(s => s.trim().length > 0);
 
@@ -84,7 +87,7 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         // Defaults
         currentQuestion.difficulty = "INTERMEDIATE";
-        currentQuestion.examTag = "Regex Parsed";
+        currentQuestion.examTag = currentQuestion._isSolvedExample ? "Solved Example" : "Regex Parsed";
         currentQuestion.hasDiagram = false;
         currentQuestion.correct = ""; // Regex can't reliably determine correct answer unless explicitly marked
 
@@ -96,9 +99,17 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             processLastQuestion(match.index);
         }
 
-        currentQuestion = {};
-        currentNumber = match[1];
-        lastIndex = match.index + match[0].length; // Start of content
+        const prefix = match[1] || ""; // e.g. "Ex", "Example", "Q"
+        const number = match[2];     // e.g. "1", "12"
+
+        // Detect if it is a Solved Example based on Prefix
+        const isSolvedExample = /Ex|Example/i.test(prefix);
+
+        currentQuestion = {
+            _tempNumber: number,
+            _isSolvedExample: isSolvedExample
+        };
+        lastIndex = match.index + match[0].length;
     }
 
     // Process the final block
@@ -172,10 +183,13 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             if (allAnswers.length > 0) {
                 console.log(`Extracted ${allAnswers.length} answers from key.`);
 
-                // 3. Apply answers to questions
-                // Heuristic: Map 1-to-1. 
-                // If we have 30 questions and 30 answers, perfect.
-                questions.forEach((q, idx) => {
+                // 3. Apply answers to UN-SOLVED questions using explicit mapping if possible
+                // Actually, the Key is usually 1..N SEQUENTIAL for the Exercise.
+                // We should collect only the !isSolvedExample questions and map them 1-to-1.
+
+                const exerciseQuestions = questions.filter(q => !(q as any)._isSolvedExample);
+
+                exerciseQuestions.forEach((q, idx) => {
                     if (idx < allAnswers.length) {
                         const ansLetter = allAnswers[idx].toUpperCase();
                         // Only overwrite if not already set (or if regex set it to empty)
@@ -204,5 +218,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         }
     }
 
-    return questions;
+    // FINAL FILTER: Return ONLY the Unsolved ones as requested by user?
+    // User asked "extract questions ... only the unsolved ones".
+    // So we filter out the Solved Examples.
+    return questions.filter(q => !(q as any)._isSolvedExample);
 }
