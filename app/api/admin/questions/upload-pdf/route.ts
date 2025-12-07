@@ -204,8 +204,69 @@ export async function POST(req: Request) {
                     }
 
                     console.log(`Regex Parser recovered ${parsedQuestions.length} questions.`);
-                    // Add a flag to indicate this was a regex fallback
-                    parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: (q.examTag ? q.examTag + " (Regex Fallback)" : "Regex Fallback") }))
+
+                    // --- ATTEMPT 4: AI Refinement of Regex Output ---
+                    // The user specifically asked to "use gen ai on parsed text" to fix missing details.
+                    // We try to clean up the regex output using a lightweight model.
+                    if (parsedQuestions.length > 0) {
+                        try {
+                            console.log("Attempting AI Refinement of Regex Output...")
+                            const currentKey = getRotatedKey(); // Use a fresh key if possible
+                            const refineGenAI = new GoogleGenerativeAI(currentKey);
+                            const refineModel = refineGenAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+                            const refinePrompt = `
+                            I have some roughly parsed questions from a PDF. 
+                            The options might be merged into the text, or solutions might be missing.
+                            Please REFINE and RESTRUCTURE them into clean JSON.
+
+                            Raw Questions:
+                            ${JSON.stringify(parsedQuestions.slice(0, 50))} 
+                            // Limit to 50 to avoid token limits. If more, we accept the raw ones for the rest.
+
+                            Strict JSON Schema:
+                            [{
+                              "text": "Clean Question Text (Separate from options). Use LaTeX.",
+                              "optionA": "Option A content", 
+                              "optionB": "Option B content", 
+                              "optionC": "Option C content", 
+                              "optionD": "Option D content",
+                              "correct": "Correct Answer",
+                              "difficulty": "BEGINNER/INTERMEDIATE/ADVANCED",
+                              "type": "SINGLE/MULTIPLE/INTEGER/SUBJECTIVE",
+                              "solution": "Detailed Solution (Generate if missing)",
+                              "examTag": "Exam Name",
+                              "hasDiagram": boolean
+                            }]
+                            
+                            Rules:
+                            - DETECT options hidden in text (e.g. "(A) 93.4") and move them to option fields.
+                            - If a question is a "Solved Example", format it nicely.
+                            - GENERATE solutions if missing.
+                            `;
+
+                            const refineResult = await refineModel.generateContent(refinePrompt);
+                            const refineText = refineResult.response.text();
+                            const refinedJson = JSON.parse(refineText.replace(/```json/g, "").replace(/```/g, "").trim());
+
+                            // Merge/Replace
+                            // We map back to ensure we don't lose the "Regex Fallback" tag but add " + AI Refined"
+                            parsedQuestions = refinedJson.map((q: any) => ({
+                                ...q,
+                                examTag: "Regex + AI Refined"
+                            }));
+                            console.log("AI Refinement Successful!");
+
+                        } catch (refineError: any) {
+                            console.warn("AI Refinement Failed (Using raw regex questions):", refineError.message);
+                            // We proceed with the original parsedQuestions (Raw Regex)
+                            parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: (q.examTag ? q.examTag + " (Raw)" : "Regex Fallback") }))
+                        }
+                    } else {
+                        // Add a flag to indicate this was a regex fallback
+                        parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: (q.examTag ? q.examTag + " (Regex Fallback)" : "Regex Fallback") }))
+                    }
+
 
                 } catch (regexError: any) {
                     console.error("Regex Parser Failed:", regexError);
