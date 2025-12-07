@@ -321,8 +321,24 @@ export function QuestionBankManagement() {
                 setParsedQuestions(data)
                 alert(`Successfully parsed ${data.length} questions! Please review and save.`)
             } else {
-                const errData = await res.json().catch(() => ({}))
-                alert(`Failed to parse PDF: ${errData.error || "Unknown Error"}\n\nDetails: ${errData.details || "No details provided"}`)
+                let errorMsg = "Unknown Error";
+                let errorDetails = "No details provided";
+                try {
+                    const text = await res.text();
+                    try {
+                        const json = JSON.parse(text);
+                        errorMsg = json.error || `Error ${res.status}`;
+                        errorDetails = json.details || text.substring(0, 200);
+                    } catch {
+                        // Not JSON, likely HTML error page
+                        errorMsg = `Server Error (${res.status} ${res.statusText})`;
+                        errorDetails = text.substring(0, 300); // Show start of HTML/Text
+                    }
+                } catch (e) {
+                    errorMsg = "Network Error";
+                    errorDetails = "Could not read response text";
+                }
+                alert(`Failed to parse PDF: ${errorMsg}\n\nDetails: ${errorDetails}`);
             }
         } catch (e: any) {
             console.error(e)
