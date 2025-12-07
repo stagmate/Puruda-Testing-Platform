@@ -36,27 +36,32 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         // Split block into Question Text, Options, Solution
         // 1. Look for Solution
+        // We find the SOLUTION first so we can remove it from the block.
+        // This prevents "Sol. ..." from being merged into Option D.
         const solMatch = fullBlock.match(/\n\s*(?:Sol\.?|Solution|Ans\.?|Answer)[\.:]\s*([\s\S]*)/i);
+        let textAndOptionsBlock = fullBlock;
+
         if (solMatch) {
             currentQuestion.solution = solMatch[1].trim();
-            // Remove solution from full text to find options
+            // CRITICAL: Remove solution from the block we use to find text/options
+            // solMatch.index is where "Sol." starts.
+            if (solMatch.index !== undefined) {
+                textAndOptionsBlock = fullBlock.substring(0, solMatch.index).trim();
+            }
         }
 
-        // 2. Look for Options (a), (b), (c), (d) or A., B., C., D. or (A), (B)
-        // Regex relaxed to allow inline options (not just start of line)
+        // 2. Look for Options in the truncated block
         // Matches "(A)" or "(a)" or "A." or "A)" preceded by newline OR space
         const optionARegex = /(?:^|\s|\n)(?:\([aA]\)|[aA]\.|[aA]\))(?:\s+|$)/;
 
-        const idxA = fullBlock.search(optionARegex);
+        const idxA = textAndOptionsBlock.search(optionARegex);
 
         if (idxA !== -1) {
             // Options exist
-            currentQuestion.text = fullBlock.substring(0, idxA).trim();
-            const rest = fullBlock.substring(idxA);
+            currentQuestion.text = textAndOptionsBlock.substring(0, idxA).trim();
+            const rest = textAndOptionsBlock.substring(idxA);
 
             // Heuristic splitting of options
-            // Split by (b)/(B)/B. etc.
-            // We use a comprehensive split regex: ((a)|(A)|a.|A.|a)|A))
             const splitRegex = /(?:^|\s|\n)(?:\([abcdABCD]\)|[abcdABCD]\.|[abcdABCD]\))(?:\s+|$)/;
             const splitOptions = rest.split(splitRegex).filter(s => s.trim().length > 0);
 
@@ -69,7 +74,7 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             currentQuestion.type = "SINGLE";
         } else {
             // No options found -> SUBJECTIVE
-            currentQuestion.text = solMatch ? fullBlock.substring(0, solMatch.index).trim() : fullBlock;
+            currentQuestion.text = textAndOptionsBlock;
             currentQuestion.type = "SUBJECTIVE";
             currentQuestion.optionA = null;
             currentQuestion.optionB = null;
