@@ -24,9 +24,35 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
     // Capture Group 2: Number
     const questionStartRegex = /\n\s*(?:(Q\.?|Question|Ex\.?|Example)\s*)?(\d+)\s*[\.:]\s+/gi;
 
+    // Regex for Section Headers
+    // e.g. "Comprehension # 1", "TRUE / FALSE", "EXERCISE-02"
+    const sectionHeaderRegex = /\n\s*((?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous)[\w\s\-\#\.]*)\s*\n/gi;
+
+    // We need to interleave section detection with question detection.
+    // Easiest is to scan for Sections first and build a map of "StartIndex -> SectionName".
+
+    const sectionMap = new Map<number, string>();
+    let secMatch;
+    while ((secMatch = sectionHeaderRegex.exec(cleanText)) !== null) {
+        sectionMap.set(secMatch.index, secMatch[1].trim());
+    }
+
+    // Helper to get section for a given index
+    const getSectionAt = (idx: number) => {
+        let bestSec = "General";
+        let bestPos = -1;
+        for (const [pos, name] of sectionMap.entries()) {
+            if (pos < idx && pos > bestPos) {
+                bestPos = pos;
+                bestSec = name;
+            }
+        }
+        return bestSec;
+    };
+
     let match;
     let lastIndex = 0;
-    let currentQuestion: Partial<ExtractedQuestion> & { _tempNumber?: string, _isSolvedExample?: boolean } | null = null;
+    let currentQuestion: Partial<ExtractedQuestion> & { _tempNumber?: string, _isSolvedExample?: boolean, _section?: string } | null = null;
 
     // Helper to process the previous question block before starting a new one
     const processLastQuestion = (endIndex: number) => {
@@ -55,7 +81,6 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         // 2. Look for Options in the truncated block
         // Matches "(A)" or "(a)" or "A." or "A)" preceded by newline OR space
         const optionARegex = /(?:^|\s|\n)(?:\([aA]\)|[aA]\.|[aA]\))(?:\s+|$)/;
-
         const idxA = textAndOptionsBlock.search(optionARegex);
 
         if (idxA !== -1) {
@@ -73,7 +98,6 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             if (splitOptions.length >= 2) currentQuestion.optionB = splitOptions[1].trim();
             if (splitOptions.length >= 3) currentQuestion.optionC = splitOptions[2].trim();
             if (splitOptions.length >= 4) currentQuestion.optionD = splitOptions[3].trim();
-
             currentQuestion.type = "SINGLE";
         } else {
             // No options found -> SUBJECTIVE
@@ -87,7 +111,7 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         // Defaults
         currentQuestion.difficulty = "INTERMEDIATE";
-        currentQuestion.examTag = currentQuestion._isSolvedExample ? "Solved Example" : "Regex Parsed";
+        currentQuestion.examTag = currentQuestion._isSolvedExample ? "Solved Example" : (currentQuestion._section || "Regex Parsed");
         currentQuestion.hasDiagram = false;
         currentQuestion.correct = ""; // Regex can't reliably determine correct answer unless explicitly marked
 
@@ -104,10 +128,12 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         // Detect if it is a Solved Example based on Prefix
         const isSolvedExample = /Ex|Example/i.test(prefix);
+        const currentSec = getSectionAt(match.index);
 
         currentQuestion = {
             _tempNumber: number,
-            _isSolvedExample: isSolvedExample
+            _isSolvedExample: isSolvedExample,
+            _section: currentSec
         };
         lastIndex = match.index + match[0].length;
     }
@@ -117,153 +143,109 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         processLastQuestion(text.length);
     }
 
-    // --- Post-Processing: Extract Answer Key ---
-    // The Answer Key often appears at the end of the document, OR at the end of sections.
-    // It can be split into multiple blocks: "Que 1..15 Ans ... Que 16..30 Ans ..."
-    // We need to find ALL Answer Key blocks in the text and apply them.
+    // --- Post-Processing: Extract Answer Key with Sections ---
 
-    // 1. Scan ALL questions for Answer Key blocks attached to them (usually in text or optionD)
-    // We iterate backwards because keys are usually at the end of a section (attached to the last Q of that section).
+    // Data Structure: Section -> { QNum -> Answer }
+    const scopedKeyMap = new Map<string, Map<string, string>>();
 
-    const keyMap = new Map<string, string>(); // Global map of QNum -> Answer
+    const normalizeSection = (s: string) => s.toLowerCase().replace(/[\s\-\#\.]/g, "");
 
-    for (const q of questions) {
-        let potentialKeyText = "";
-        let foundInField: "optionD" | "text" | null = null;
-        let splitIndex = -1;
+    // 1. Scan Text for Answer Keys
+    const keyHeaderRegex = /(?:CHECK YOUR GRASP|ANSWER KEY|Answer Key|BRAIN TEASERS)/gi;
+    let keyMatch;
 
-        // Try to find explicit "ANSWER KEY" Header or "Que 1" pattern
-        const headerRegex = /(?:CHECK YOUR GRASP|ANSWER KEY|Answer Key|BRAIN TEASERS)/i;
-        // Also look for the "Que 1 ... Ans" table pattern even without header
-        const tablePattern = /Que\.?\s*(?:1\s+|16\s+)/i;
+    // We scan the raw text for Key Blocks to handle them linearly
+    while ((keyMatch = keyHeaderRegex.exec(cleanText)) !== null) {
+        const keyStartIndex = keyMatch.index;
+        // Heuristic: Key block goes until next SectionHeader or End
+        // Find next section header that is NOT consistent with being INSIDE the key (e.g. "True/False" IS inside the key usually)
+        // Actually, usually Key is at end. Let's just grab 5000 chars?
+        const keyBlock = cleanText.substring(keyStartIndex, keyStartIndex + 5000); // Limit lookhead
+        console.log("Found Answer Key Block at", keyStartIndex);
 
-        const checkField = (text: string | null) => {
-            if (!text) return -1;
-            let idx = text.search(headerRegex);
-            if (idx === -1) idx = text.search(tablePattern);
-            return idx;
+        // Parse Keys within this block
+        // Look for Section Headers INSIDE the Key Block
+        // e.g. "True / False \n 1. T"
+
+        const innerSectionRegex = /(?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous)[\w\s\-\#\.]*/gi;
+
+        // Split keyBlock by sections
+        let currentKeySection = "General";
+        let lastKeyPos = 0;
+        let innerMatch;
+
+        // If Key block starts with text before first section, that's "General" (or belongs to previous section)
+
+        const processKeySegment = (segment: string, sectionName: string) => {
+            // Parse "1. A", "1. T", "1 -> A"
+            // Regex: Number ... Answer
+            // Matches "1. T", "1. (A)", "1 -> A", "1 A"
+            // Answer tokens: A-D, T, F, Words?
+            const qaRegex = /(\d+)\s*[\.:\)]\s*([A-DA-d\s,]+|T|F|True|False)/g;
+            let m;
+
+            if (!scopedKeyMap.has(normalizeSection(sectionName))) {
+                scopedKeyMap.set(normalizeSection(sectionName), new Map());
+            }
+            const map = scopedKeyMap.get(normalizeSection(sectionName))!;
+
+            while ((m = qaRegex.exec(segment)) !== null) {
+                const qNum = m[1];
+                const ans = m[2].trim();
+                // Validate Answer (A-D, T, F)
+                if (/^[A-Da-d\,\s]+$|^T$|^F$|^True$|^False$/i.test(ans)) {
+                    map.set(qNum, ans.toUpperCase().replace(/\s/g, "")); // condensed "A,C"
+                }
+            }
         };
 
-        if (q.optionD) {
-            const idx = checkField(q.optionD);
-            if (idx !== -1) {
-                potentialKeyText = q.optionD;
-                foundInField = "optionD";
-                splitIndex = idx;
-            }
+        while ((innerMatch = innerSectionRegex.exec(keyBlock)) !== null) {
+            const segment = keyBlock.substring(lastKeyPos, innerMatch.index);
+            processKeySegment(segment, currentKeySection);
+
+            currentKeySection = innerMatch[0].trim();
+            lastKeyPos = innerMatch.index + innerMatch[0].length;
         }
-
-        if (!foundInField && checkField(q.text) !== -1) {
-            potentialKeyText = q.text;
-            foundInField = "text";
-            splitIndex = checkField(q.text);
-        }
-
-        if (foundInField && potentialKeyText && splitIndex !== -1) {
-            const keyBlock = potentialKeyText.substring(splitIndex);
-            console.log("Found Answer Key Block inside Question", (q as any)._tempNumber);
-
-            // Regex to find "Ans . A B C ..." blocks
-            const ansBlockRegex = /(?:Ans|Answer)\.?\s*([A-D\s,]+)(?:Que|Doc|Page|$)/gi;
-
-            let match;
-            // We need to correlate these with the "Que ... " numbers if possible.
-            // But first, let's extract the answer tokens.
-            // Robust Tokenizer: handles "A", "A,B", "A, B", "A B"
-            // We look for: (A or B or C or D) optionally followed by (, and more letters)
-            // Regex: /[a-dA-D](?:\s*,\s*[a-dA-D])*/g 
-            // But wait, "A B" means Q1=A, Q2=B. "A,B" means Q1=A,B.
-            // We must distinguish space vs comma.
-
-            // Strategy:
-            // 1. Find the "Que" line to count how many questions.
-            // 2. Find the "Ans" line and split.
-            // Simpler: Just look for comma-groups.
-
-            while ((match = ansBlockRegex.exec(keyBlock)) !== null) {
-                const lettersStr = match[1];
-
-                // Split by whitespace to get tokens? 
-                // If "A,B" is present, it shouldn't have spaces inside ideally.
-                // If "A, B", split by space gives "A," and "B".
-                // We need a smart regex to capture "A" or "A,B" or "A, B" as one token?
-                // No, standard typically is "A B C" or "A,B C".
-
-                // Let's try matching [A-D](?:,[A-D])*
-                // This matches "A" or "A,B" or "A,B,C".
-                const answerTokens = lettersStr.match(/[A-D](?:\s*,\s*[A-D])*/gi);
-
-                if (answerTokens) {
-                    // We need to know WHICH questions these belong to.
-                    // We can try to finding the "Que ..." line preceding this "Ans ..." line.
-                    // But strictly, we can assume the Key applies to the 'Unsolved' questions Preceding this block?
-                    // Or better: The questions in the key usually range 1..N.
-                    // Let's assume sequential 1..N for the collected tokens in this Block.
-
-                    // Challenge: "Que 16..21". Tokens start at 16.
-                    // We need to parse the numbers from the "Que" row.
-
-                    // Try to parse the entire Table if possible.
-                    // "Que 1 2 ... \n Ans A B ..."
-
-                    // Fallback: If we find N tokens, and we have questions with numbers matching the range...
-                    // Let's just collect all tokens in order and map them to "1, 2, 3..." relative to this block? 
-                    // No, numbers might be "16, 17...".
-
-                    // LET'S PARSE THE "Que" ROWS too.
-                    // Look for "Que ... " inside keyBlock.
-                    // extract numbers.
-                }
-            }
-
-            // REVISED PARSING FOR BLOCKS
-            // We'll extract pairs of (Que Line, Ans Line).
-            // Que Line: /Que\.?\s*((?:\d+\s*)+)/
-            // Ans Line: /Ans\.?\s*((?:[A-D,\s]+))/
-
-            const lines = keyBlock.split(/\n|Que\./); // Split roughly
-            // This is getting parsing-heavy.
-            // Alternative: "Smart token stitching" 1..N
-            // Capture all numbers in the block -> [1, 2, ... 16 ... ]
-            // Capture all answer tokens -> [A, B, ... C ... ]
-
-            const allNums = keyBlock.match(/\b\d+\b/g); // Simple numbers
-            const allAns = keyBlock.match(/[A-D](?:\s*,\s*[A-D])*/gi); // Answers "A" or "A,B"
-
-            // Filter nums to be reasonable question numbers (e.g. < 200)
-            const cleanNums = allNums?.filter(n => parseInt(n) < 200 && parseInt(n) > 0);
-
-            if (cleanNums && allAns && Math.abs(cleanNums.length - allAns.length) < 5) {
-                // If counts are seemingly aligned
-                const count = Math.min(cleanNums.length, allAns.length);
-                for (let i = 0; i < count; i++) {
-                    keyMap.set(cleanNums[i], allAns[i].toUpperCase().replace(/\s/g, ""));
-                }
-            }
-
-            // CLEANUP
-            const cleanStr = potentialKeyText.substring(0, splitIndex).trim();
-            if (foundInField === "optionD") {
-                q.optionD = cleanStr;
-            } else {
-                q.text = cleanStr;
-            }
-        }
+        // Last segment
+        processKeySegment(keyBlock.substring(lastKeyPos), currentKeySection);
     }
 
-    if (keyMap.size > 0) {
-        console.log(`Global Key Map Constructed: ${keyMap.size} entries.`);
-        // Apply to Unsolved
+    // Also try embedded keys in questions (from previous turn logic)
+    // If we didn't find any Keys via global scan, use the per-question logic?
+    // Let's rely on the Scoped Map first.
+
+    if (scopedKeyMap.size > 0) {
+        console.log("Scoped Key Map:", Array.from(scopedKeyMap.keys()));
+
         const exerciseQuestions = questions.filter(q => !(q as any)._isSolvedExample);
+
         exerciseQuestions.forEach(q => {
             const num = (q as any)._tempNumber;
-            if (num && keyMap.has(num)) {
-                const ansLetter = keyMap.get(num);
-                // Format: (A) Text or (A,C) Text (if multiple?)
+            const sec = (q as any)._section || "General";
+
+            // Try Exact Match
+            let map = scopedKeyMap.get(normalizeSection(sec));
+
+            // Try Fuzzy Match (keywords)
+            if (!map) {
+                // e.g. Question sec "Comprehension # 1", Key sec "Comprehension"
+                const normSec = normalizeSection(sec);
+                for (const [keySecName, m] of scopedKeyMap.entries()) {
+                    if (normSec.includes(keySecName) || keySecName.includes(normSec)) {
+                        map = m;
+                        break;
+                    }
+                }
+            }
+            // Try General if question has no specific section or match failed
+            if (!map) map = scopedKeyMap.get("general");
+
+            if (num && map && map.has(num)) {
+                const ansLetter = map.get(num);
                 q.correct = `(${ansLetter})`;
 
-                // If single letter, append text
-                if (ansLetter && ansLetter.length === 1 && !ansLetter.includes(",")) {
+                // Append text for MCQs
+                if (ansLetter && /^[A-D]$/.test(ansLetter)) {
                     if (ansLetter === 'A') q.correct += " " + (q.optionA || "");
                     if (ansLetter === 'B') q.correct += " " + (q.optionB || "");
                     if (ansLetter === 'C') q.correct += " " + (q.optionC || "");
@@ -273,6 +255,6 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
         });
     }
 
-    // FINAL FILTER: Return ONLY the Unsolved ones as requested by user?
+    // FINAL FILTER: Return ONLY the Unsolved ones as requested by user
     return questions.filter(q => !(q as any)._isSolvedExample);
 }
