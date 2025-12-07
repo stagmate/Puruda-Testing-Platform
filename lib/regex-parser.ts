@@ -58,7 +58,20 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
     const processLastQuestion = (endIndex: number) => {
         if (!currentQuestion) return;
 
-        const fullBlock = cleanText.substring(lastIndex, endIndex).trim();
+        let fullBlock = cleanText.substring(lastIndex, endIndex).trim();
+
+        // --- NOISE CLEANUP ---
+        // Headers/Footers often appear between questions
+        // e.g. "EXERCISE-01 CHECK YOUR GRASP...", "Page (2) Break"
+        const noiseRegex = /\n\s*(?:EXERCISE-\d+|CHECK YOUR GRASP|Page\s*\(\d+\)|Break|SELECT THE CORRECT|ONLY ONE CORRECT)[\s\S]*?(?=\n|$)/gi;
+        // Be careful not to delete the actual question text if it's on the same line.
+        // Usually headers are distinct lines.
+        fullBlock = fullBlock.replace(noiseRegex, "\n");
+
+        // Also remove specific known noise lines that might be inline
+        fullBlock = fullBlock.replace(/CHECK YOUR GRASP.*\n?/gi, "");
+        fullBlock = fullBlock.replace(/SELECT THE CORRECT ALTERNATIVE.*\n?/gi, "");
+        fullBlock = fullBlock.trim();
 
         // Split block into Question Text, Options, Solution
         // 1. Look for Solution
@@ -85,8 +98,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
         if (textAndOptionsBlock.search(optionRegex) === -1) {
             // Check for (1)
-            // Be careful not to match "1." as the question number. 
-            // We look for (1) or 1) specifically? 
+            // Be careful not to match "1." as the question number.
+            // We look for (1) or 1) specifically?
             // " (1) " is safer.
             const numOptRegex = /(?:^|\s|\n)(?:\(1\)|1\))(?:\s+|$)/;
             if (textAndOptionsBlock.search(numOptRegex) !== -1) {
@@ -178,7 +191,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
     };
 
     // 1. Scan Text for Answer Keys
-    const keyHeaderRegex = /(?:CHECK YOUR GRASP|ANSWER KEY|Answer Key|BRAIN TEASERS)/gi;
+    // REMOVED "CHECK YOUR GRASP" as it causes false positives (it's often just a header)
+    const keyHeaderRegex = /(?:ANSWER KEY|Answer Key|BRAIN TEASERS)/gi;
     let keyMatch;
 
     // We scan the raw text for Key Blocks to handle them linearly
@@ -213,6 +227,7 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             // 1. Try Table Parsing (Row of Que, Row of Ans)
             // Look for "Que ... \n Ans ..."
             const queLineRegex = /Que\.?\s*((?:\d+\s*)+)/i;
+            // Ensure Ans line has valid answer tokens
             const ansLineRegex = /(?:Ans|Answer)\.?\s*((?:\d+|[A-D]|\(?[A-D]\)?)+(?:\s+(?:\d+|[A-D]|\(?[A-D]\)?))*)/i;
 
             // Check if segment contains these clearly
@@ -235,16 +250,29 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
                 }
             }
 
-            // 2. Fallback to Pair Parsing: "1. A" or "1 -> A" or "1. 3"
+            // 2. Fallback to Pair Parsing
             if (!tableParsed) {
-                // Modified regex to support Numeric Answers "1. 3"
-                // Must ensure we don't match "1. 2" as Q1 Q2.
-                // Constraint: Separator must be [.:\)] or "->"
+                // Modified regex: Stricter for T/F/True/False to avoid matching "Two" or unrelated words
+                // Matches: "1. A", "1 -> A", "1 T", "1 True"
                 const qaRegex = /(\d+)\s*(?:[\.:\)]|->)\s*([A-DA-d]+|T|F|True|False|[1234])(?=\s|$|\n)/g;
                 let m;
                 while ((m = qaRegex.exec(segment)) !== null) {
                     const qNum = m[1];
                     const ans = m[2].trim();
+
+                    // Extra heuristic: If 'T' check if it's 'True' or just random T?
+                    // My regex [A-DA-d] is strict. T is T.
+                    // But "12 T..." matching "12. Two" -> "12" and "T" from Two?
+                    // My regex requires (\d+) then separator [.:)] or ->.
+                    // "12 . Two" -> "12" "." "T"wo? Yea "T" is matched by [A-D...T...].
+                    // Wait, [A-D] does not match T.
+                    // I explicitly added |T|F.
+
+                    // If the answer is just "T" or "F", verify it's standalone?
+                    // regex uses (?=\s|$|\n) which enforces T followed by space/end.
+                    // "Two" -> "Tw" is not matching. "T" followed by "w".
+                    // So "Two" should NOT match.
+
                     map.set(qNum, ans.toUpperCase().replace(/\s/g, ""));
                 }
             }
