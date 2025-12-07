@@ -87,6 +87,12 @@ export async function POST(req: Request) {
             - If it's a Solved Example, the "solution" field is CRITICAL. Extract the full solution there.
             - If no options are present, set type to "SUBJECTIVE" and options to null strings.
             - Use Latex for ALL Math.
+
+            **Generative Repair:**
+            - If the question text is incomplete or cut off, RECONSTRUCT it based on context.
+            - If NO solution is present in the text, YOU MUST GENERATE A DETAILED STEP-BY-STEP SOLUTION.
+            - If options are missing but the question is clearly Multiple Choice, generate plausible options or mark as SUBJECTIVE.
+            - Ensure all LaTeX is valid and properly escaped.
             `
 
             for (const modelName of MODELS_TO_TRY) {
@@ -156,6 +162,11 @@ export async function POST(req: Request) {
                 - Capture Solved Examples as questions. 
                 - If no options, set type="SUBJECTIVE".
                 - Use Latex for Math.
+
+                **Generative Repair:**
+                - If text is broken/incomplete, Fix it.
+                - GENERATE A SOLUTION if one is missing from the source text.
+                - Ensure clear formatting.
                 `
 
                 // Try Flash first (Fast/Standard)
