@@ -322,7 +322,7 @@ export function QuestionBankManagement() {
                 alert(`Successfully parsed ${data.length} questions! Please review and save.`)
             } else {
                 const errData = await res.json().catch(() => ({}))
-                alert(`Failed to parse PDF: ${errData.error || "Unknown Error"}`)
+                alert(`Failed to parse PDF: ${errData.error || "Unknown Error"}\n\nDetails: ${errData.details || "No details provided"}`)
             }
         } catch (e: any) {
             console.error(e)
