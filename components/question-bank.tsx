@@ -201,6 +201,11 @@ export function QuestionBankManagement() {
     // Bulk Upload State
     const [isBulkUploading, setIsBulkUploading] = useState(false)
 
+    // PDF Import State
+    const [pdfFile, setPdfFile] = useState<File | null>(null)
+    const [isParsing, setIsParsing] = useState(false)
+    const [parsedQuestions, setParsedQuestions] = useState<any[]>([])
+
     // ... (existing fetch functions) ...
 
     // Hierarchy Creation Handlers
@@ -296,6 +301,62 @@ export function QuestionBankManagement() {
             setIsBulkUploading(false)
         }
         reader.readAsText(csvFile)
+        reader.readAsText(csvFile)
+    }
+
+    // PDF Handlers
+    const handlePdfUpload = async () => {
+        if (!pdfFile) return
+        setIsParsing(true)
+        const formData = new FormData()
+        formData.append("file", pdfFile)
+
+        try {
+            const res = await fetch("/api/admin/questions/upload-pdf", {
+                method: "POST",
+                body: formData
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setParsedQuestions(data)
+                alert(`Successfully parsed ${data.length} questions! Please review and save.`)
+            } else {
+                alert("Failed to parse PDF. Check console.")
+            }
+        } catch (e) {
+            console.error(e)
+            alert("Error uploading PDF")
+        }
+        setIsParsing(false)
+    }
+
+    const handleSaveParsedQuestions = async () => {
+        if (parsedQuestions.length === 0 || !selectedSubject) {
+            alert("No questions to save or no Subject selected")
+            return
+        }
+
+        const context = {
+            courseId: selectedCourse,
+            subjectId: selectedSubject,
+            chapterId: selectedChapter,
+            subtopicId: selectedSubtopic
+        }
+
+        const res = await fetch("/api/admin/questions/bulk", {
+            method: "POST",
+            body: JSON.stringify({ questions: parsedQuestions, context })
+        })
+
+        if (res.ok) {
+            const data = await res.json()
+            alert(`Saved ${data.count} questions!`)
+            setParsedQuestions([])
+            setPdfFile(null)
+            fetchQuestions()
+        } else {
+            alert("Failed to save questions")
+        }
     }
 
     const downloadTemplate = () => {
@@ -407,6 +468,7 @@ export function QuestionBankManagement() {
                 <Tabs defaultValue="repository">
                     <TabsList className="mb-4">
                         <TabsTrigger value="repository">Repository ({questions.length})</TabsTrigger>
+                        <TabsTrigger value="pdf-import">PDF Import (AI)</TabsTrigger>
                         <TabsTrigger value="single">Add Single</TabsTrigger>
                         <TabsTrigger value="bulk">Bulk Upload</TabsTrigger>
                     </TabsList>
@@ -433,6 +495,51 @@ export function QuestionBankManagement() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="pdf-import" className="space-y-4">
+                        <div className="p-4 border rounded bg-slate-50 space-y-4">
+                            <div>
+                                <h3 className="font-medium">AI PDF Question Import</h3>
+                                <p className="text-sm text-muted-foreground">Upload a PDF, let AI extract questions, review them, and save.</p>
+                            </div>
+
+                            <div className="flex gap-2 items-end">
+                                <div className="flex-1">
+                                    <Label>Select PDF File</Label>
+                                    <Input type="file" accept=".pdf" onChange={e => setPdfFile(e.target.files?.[0] || null)} />
+                                </div>
+                                <Button onClick={handlePdfUpload} disabled={!pdfFile || isParsing}>
+                                    {isParsing ? "AI Parsing..." : "Parse PDF"}
+                                </Button>
+                            </div>
+
+                            {parsedQuestions.length > 0 && (
+                                <div className="space-y-4 pt-4 border-t">
+                                    <div className="flex justify-between items-center">
+                                        <h4 className="font-medium">Parsed Questions ({parsedQuestions.length})</h4>
+                                        <Button onClick={handleSaveParsedQuestions} disabled={!selectedSubject}>
+                                            Save All to {chapters.find(c => c.id === selectedChapter)?.name || "Subject"}
+                                        </Button>
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto space-y-2 border p-2 rounded bg-white">
+                                        {parsedQuestions.map((q, i) => (
+                                            <div key={i} className="p-2 border rounded text-xs">
+                                                <p className="font-semibold">{i + 1}. {q.text}</p>
+                                                <ul className="pl-4 list-disc text-muted-foreground">
+                                                    <li>A: {q.optionA}</li>
+                                                    <li>B: {q.optionB}</li>
+                                                    <li>C: {q.optionC}</li>
+                                                    <li>D: {q.optionD}</li>
+                                                </ul>
+                                                <p className="mt-1 text-green-600">Correct: {q.correct}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {!selectedSubject && <p className="text-red-500 text-sm">Please select a Subject at the top to save.</p>}
+                                </div>
+                            )}
                         </div>
                     </TabsContent>
 
