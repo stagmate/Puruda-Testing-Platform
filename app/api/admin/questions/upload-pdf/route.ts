@@ -138,11 +138,20 @@ export async function POST(req: Request) {
                 Rules: Output JSON ONLY. Infer options/difficulty if missing. Use Latex for Math.
                 `
 
-                // Try with the most reliable standard model
-                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
-                const result = await model.generateContent(prompt)
-                const responseText = result.response.text()
-                parsedQuestions = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim())
+                // Try Flash first (Fast/Standard)
+                try {
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
+                    const result = await model.generateContent(prompt)
+                    const responseText = result.response.text()
+                    parsedQuestions = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim())
+                } catch (flashError: any) {
+                    console.warn("Text Fallback (Flash) failed, trying Pro:", flashError.message)
+                    // Try Pro as last resort (Separate Quota bucket usually)
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" })
+                    const result = await model.generateContent(prompt)
+                    const responseText = result.response.text()
+                    parsedQuestions = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim())
+                }
 
                 // Add a flag to indicate this was a text fallback
                 parsedQuestions = parsedQuestions.map((q: any) => ({ ...q, examTag: (q.examTag ? q.examTag + " (Text Fallback)" : "Text Fallback") }))
@@ -151,7 +160,7 @@ export async function POST(req: Request) {
                 console.error("Text Fallback Failed:", fallbackError)
                 return new NextResponse(JSON.stringify({
                     error: "All parsing methods failed. Quota limits may be reached.",
-                    details: `Multimodal Error: ${lastError?.message}. Fallback Error: ${fallbackError.message}`
+                    details: `FALLBACK ERROR (Text Mode): ${fallbackError.message} \n\n PRIMARY ERROR (Native PDF): ${lastError?.message}`
                 }), { status: 500 })
             }
         }
