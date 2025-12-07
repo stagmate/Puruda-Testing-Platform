@@ -15,10 +15,10 @@ export async function POST(req: Request) {
             return new NextResponse(JSON.stringify({ error: "No file uploaded" }), { status: 400 })
         }
 
-        const apiKey = process.env.GEMINI_API_KEY
+        const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY
         if (!apiKey) {
-            console.error("GEMINI_API_KEY is missing")
-            return new NextResponse(JSON.stringify({ error: "Server configuration error: GEMINI_API_KEY missing" }), { status: 500 })
+            console.error("GOOGLE_API_KEY is missing")
+            return new NextResponse(JSON.stringify({ error: "Server configuration error: GOOGLE_API_KEY missing" }), { status: 500 })
         }
 
         // Initialize Gemini
