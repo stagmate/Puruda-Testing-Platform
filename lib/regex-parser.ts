@@ -12,11 +12,20 @@ export interface ExtractedQuestion {
     hasDiagram: boolean;
 }
 
-export function parseTextWithRegex(text: string): ExtractedQuestion[] {
+export const parseTextWithRegex = (text: string): ExtractedQuestion[] => {
     const questions: ExtractedQuestion[] = [];
 
+    // --- GLOBAL PRE-PROCESSING ---
+    // Remove Page Breaks and excessive separators
+    // e.g. "---------------- Page (6) Break --------------"
+    let cleanText = text.replace(/[-_]{3,}\s*Page\s*\(\d+\)\s*Break\s*[-_]{3,}/gi, "\n");
+    // Also remove just "Page (x) Break" if it occurs without dashes
+    cleanText = cleanText.replace(/Page\s*\(\d+\)\s*Break/gi, "\n");
+    // Remove "CHECK YOUR GRASP" lines globally if they are just headers
+    cleanText = cleanText.replace(/CHECK YOUR GRASP(?:\s+SELECT\s+THE\s+CORRECT\s+ALTERNATIVE)?(?:.*ONLY ONE.*)?/gi, "\n");
+
     // Normalize text: remove weird chars, ensure standardized spacing
-    const cleanText = text.replace(/\r\n/g, "\n").replace(/\t/g, " ");
+    cleanText = cleanText.replace(/\r\n/g, "\n").replace(/\t/g, " ");
 
     // Regex to find Question Start
     // Matches: "1.", "1 .", "Q1.", "Ex. 1", "Example 1" at start of line
@@ -26,7 +35,11 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
     // Regex for Section Headers
     // e.g. "Comprehension # 1", "TRUE / FALSE", "EXERCISE-02", "Exercise-05(A)"
-    const sectionHeaderRegex = /\n\s*((?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous|Previous\s*Year|Archives?)[\w\s\-\#\.\(\)\[\]]*)\s*\n/gi;
+    // Made stricter: 
+    // 1. Must start with known keywords
+    // 2. Allowed chars: alphanumeric, space, -, #, ., (), []
+    // 3. Length Limit: {1, 60} prevents capturing entire paragraphs
+    const sectionHeaderRegex = /\n\s*((?:Comprehension|Section|Part|Exercise|True\s*\/|Fill\s*in|Match|Assertion|Subjective|Brain\s*Teasers|Miscellaneous|Previous\s*Year|Archives?)[a-zA-Z0-9\s\-\#\.\(\)\[\]]{1,60})(?=\n|\s{2,})/gi;
 
     // We need to interleave section detection with question detection.
     // Easiest is to scan for Sections first and build a map of "StartIndex -> SectionName".
