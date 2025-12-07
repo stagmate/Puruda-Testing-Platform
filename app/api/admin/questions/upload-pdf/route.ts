@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         }
 
         // Prompt Gemini to parse questions
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
 
         const prompt = `
         You are an advanced educational AI parser. Your goal is to extract questions from the uploaded PDF document with high precision, preserving mathematical notation and structure.
