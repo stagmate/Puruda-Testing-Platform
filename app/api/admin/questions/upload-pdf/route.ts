@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-const pdf = require("pdf-parse")
+const PDFParser = require("pdf2json")
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "")
@@ -24,15 +24,28 @@ export async function POST(req: Request) {
         const arrayBuffer = await file.arrayBuffer()
         const buffer = Buffer.from(arrayBuffer)
 
-        // Extract text from PDF
-        let pdfText = ""
-        try {
-            const data = await pdf(buffer)
-            pdfText = data.text
-        } catch (error) {
-            console.error("PDF Parsing Error:", error)
-            return new NextResponse("Failed to extract text from PDF", { status: 400 })
-        }
+        // Extract text from PDF using pdf2json
+        const pdfParser = new PDFParser(null, 1); // 1 = text only
+
+        const pdfText = await new Promise<string>((resolve, reject) => {
+            pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+            pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
+                // pdf2json returns text in a weird format (URI encoded), usually better to use getRawTextContent() which prints to console or file, 
+                // but strictly speaking, `getRawTextContent` is a method on the instance.
+                // Actually, `pdf2json`'s data structure is complex. 
+                // A better approach with pdf2json for raw text is to just use the text content.
+                // `pdfParser.getRawTextContent()` returns the text.
+                try {
+                    const text = pdfParser.getRawTextContent();
+                    resolve(text);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+
+            // Parse
+            pdfParser.parseBuffer(buffer);
+        });
 
         // Prompt Gemini to parse questions
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
@@ -61,13 +74,13 @@ export async function POST(req: Request) {
         5. Return ONLY the JSON array. Do not include markdown formatting (like \`\`\`json).
 
         Input Text:
-        ${pdfText.substring(0, 30000)} // Limit context window if needed, though Flash handles detailed context well.
+        ${pdfText.substring(0, 30000)} 
         `
 
         const result = await model.generateContent(prompt)
         const responseText = result.response.text()
 
-        // Clean up markdown code blocks if present (Gemini sometimes adds them despite instructions)
+        // Clean up markdown code blocks if present
         const cleanedText = responseText.replace(/```json/g, "").replace(/```/g, "").trim()
 
         let parsedQuestions = []
