@@ -36,6 +36,7 @@ function cleanJsonString(str: string) {
 }
 
 export async function POST(req: NextRequest) {
+    const startTime = Date.now();
     let tempPath: string | null = null;
     let fileUri: string | null = null;
     let apiKey = "";
@@ -254,7 +255,8 @@ export async function POST(req: NextRequest) {
 
             // Chunking Logic
             const CHUNK_SIZE = 4;
-            const CONCURRENCY_LIMIT = 3;
+            // aggressively use keys (we have ~6 keys now)
+            const CONCURRENCY_LIMIT = 6;
             let refinedAllQuestions: any[] = [];
 
             // Split into chunks
@@ -267,6 +269,18 @@ export async function POST(req: NextRequest) {
 
             // PROCESS CHUNKS IN PARALLEL BATCHES
             for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
+                // Circuit Breaker: If we are nearing the 60s timeout (e.g. > 45s passed), STOP.
+                // Better to return some raw questions than to timeout completely.
+                if (Date.now() - startTime > 45000) {
+                    console.warn("Time Budget Exceeded! Returning remaining questions as RAW.");
+                    // Append remaining raw chunks
+                    for (let j = i; j < chunks.length; j++) {
+                        const rawChunk = chunks[j].map((q: any) => ({ ...q, examTag: `Regex (Raw) - Timed Out` }));
+                        refinedAllQuestions.push(...rawChunk);
+                    }
+                    break; // Exit loop
+                }
+
                 const batchStart = i;
                 const batchChunks = chunks.slice(i, i + CONCURRENCY_LIMIT);
 
