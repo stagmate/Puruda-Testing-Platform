@@ -8,7 +8,7 @@ import { writeFile, unlink } from "fs/promises";
 import path from "path";
 import { tmpdir } from "os";
 
-import { getRotatedKey } from "@/lib/gemini-keys";
+import { getRotatedKey, GEMINI_KEYS } from "@/lib/gemini-keys";
 // Import regex parser with alias to match existing code usage
 import { parseTextWithRegex as extractQuestionsRegex } from "@/lib/regex-parser";
 
@@ -255,8 +255,9 @@ export async function POST(req: NextRequest) {
 
             // Chunking Logic
             const CHUNK_SIZE = 4;
-            // aggressively use keys (we have ~6 keys now)
-            const CONCURRENCY_LIMIT = 6;
+            // Dynamic Concurrency: Use all available keys in parallel
+            // If user adds more keys, this automatically speeds up!
+            const CONCURRENCY_LIMIT = Math.max(2, GEMINI_KEYS.length);
             let refinedAllQuestions: any[] = [];
 
             // Split into chunks
