@@ -42,10 +42,10 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
             // Remove solution from full text to find options
         }
 
-        // 2. Look for Options (a), (b), (c), (d) or A., B., C., D.
+        // 2. Look for Options (a), (b), (c), (d) or A., B., C., D. or (A), (B)
         // Regex relaxed to allow inline options (not just start of line)
-        // Matches "(A)" or "A." or "(a)" preceded by newline OR space
-        const optionARegex = /(?:^|\s|\n)(?:\(a\)|[aA]\.|[A]\))(?:\s+|$)/;
+        // Matches "(A)" or "(a)" or "A." or "A)" preceded by newline OR space
+        const optionARegex = /(?:^|\s|\n)(?:\([aA]\)|[aA]\.|[aA]\))(?:\s+|$)/;
 
         const idxA = fullBlock.search(optionARegex);
 
@@ -56,8 +56,8 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
 
             // Heuristic splitting of options
             // Split by (b)/(B)/B. etc.
-            // We use a comprehensive split regex
-            const splitRegex = /(?:^|\s|\n)(?:\([abcd]\)|[abcdA-D]\.|[A-D]\))(?:\s+|$)/;
+            // We use a comprehensive split regex: ((a)|(A)|a.|A.|a)|A))
+            const splitRegex = /(?:^|\s|\n)(?:\([abcdABCD]\)|[abcdABCD]\.|[abcdABCD]\))(?:\s+|$)/;
             const splitOptions = rest.split(splitRegex).filter(s => s.trim().length > 0);
 
             // splitOptions entries should correspond to A, B, C, D in order
