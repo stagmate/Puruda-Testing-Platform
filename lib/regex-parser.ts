@@ -118,108 +118,161 @@ export function parseTextWithRegex(text: string): ExtractedQuestion[] {
     }
 
     // --- Post-Processing: Extract Answer Key ---
-    // The Answer Key often appears at the end of the document, appended to the last question.
+    // The Answer Key often appears at the end of the document, OR at the end of sections.
     // It can be split into multiple blocks: "Que 1..15 Ans ... Que 16..30 Ans ..."
-    if (questions.length > 0) {
-        const lastQ = questions[questions.length - 1];
+    // We need to find ALL Answer Key blocks in the text and apply them.
 
-        // 1. Identify the Answer Key Chunk
-        // Look for "ANSWER KEY" or pattern "Que. 1" near the end
-        // We'll search in Option D and Text
+    // 1. Scan ALL questions for Answer Key blocks attached to them (usually in text or optionD)
+    // We iterate backwards because keys are usually at the end of a section (attached to the last Q of that section).
+
+    const keyMap = new Map<string, string>(); // Global map of QNum -> Answer
+
+    for (const q of questions) {
         let potentialKeyText = "";
         let foundInField: "optionD" | "text" | null = null;
         let splitIndex = -1;
 
-        // Try to find explicit "ANSWER KEY" Header
-        const headerRegex = /(?:CHECK YOUR GRASP|ANSWER KEY|Answer Key)/i;
+        // Try to find explicit "ANSWER KEY" Header or "Que 1" pattern
+        const headerRegex = /(?:CHECK YOUR GRASP|ANSWER KEY|Answer Key|BRAIN TEASERS)/i;
+        // Also look for the "Que 1 ... Ans" table pattern even without header
+        const tablePattern = /Que\.?\s*(?:1\s+|16\s+)/i;
 
-        if (lastQ.optionD && headerRegex.test(lastQ.optionD)) {
-            potentialKeyText = lastQ.optionD;
-            foundInField = "optionD";
-            splitIndex = lastQ.optionD.search(headerRegex);
-        } else if (headerRegex.test(lastQ.text)) {
-            potentialKeyText = lastQ.text;
-            foundInField = "text";
-            splitIndex = lastQ.text.search(headerRegex);
+        const checkField = (text: string | null) => {
+            if (!text) return -1;
+            let idx = text.search(headerRegex);
+            if (idx === -1) idx = text.search(tablePattern);
+            return idx;
+        };
+
+        if (q.optionD) {
+            const idx = checkField(q.optionD);
+            if (idx !== -1) {
+                potentialKeyText = q.optionD;
+                foundInField = "optionD";
+                splitIndex = idx;
+            }
         }
 
-        // Fallback: proper "Que. 1" pattern if header missing
-        if (!foundInField) {
-            const quePattern = /Que\.?\s*1\s+\d+/i;
-            if (lastQ.optionD && quePattern.test(lastQ.optionD)) {
-                potentialKeyText = lastQ.optionD;
-                foundInField = "optionD";
-                splitIndex = lastQ.optionD.search(quePattern);
-            } else if (quePattern.test(lastQ.text)) {
-                potentialKeyText = lastQ.text;
-                foundInField = "text";
-                splitIndex = lastQ.text.search(quePattern);
-            }
+        if (!foundInField && checkField(q.text) !== -1) {
+            potentialKeyText = q.text;
+            foundInField = "text";
+            splitIndex = checkField(q.text);
         }
 
         if (foundInField && potentialKeyText && splitIndex !== -1) {
             const keyBlock = potentialKeyText.substring(splitIndex);
-            console.log("Found Answer Key Block (Length):", keyBlock.length);
-
-            // 2. Parse all "Ans. A B C..." segments in the block
-            // We ignore the "Que. 1 2 3" numbers because they are often malformed (1 0 for 10)
-            // We assume the ANSWERS are listed in valid order (A B C D...)
+            console.log("Found Answer Key Block inside Question", (q as any)._tempNumber);
 
             // Regex to find "Ans . A B C ..." blocks
-            // Captures the sequence of letters after "Ans"
-            const ansBlockRegex = /(?:Ans|Answer)\.?\s*([A-D\s]+)(?:Que|Doc|Page|$)/gi;
-            let allAnswers: string[] = [];
+            const ansBlockRegex = /(?:Ans|Answer)\.?\s*([A-D\s,]+)(?:Que|Doc|Page|$)/gi;
 
             let match;
+            // We need to correlate these with the "Que ... " numbers if possible.
+            // But first, let's extract the answer tokens.
+            // Robust Tokenizer: handles "A", "A,B", "A, B", "A B"
+            // We look for: (A or B or C or D) optionally followed by (, and more letters)
+            // Regex: /[a-dA-D](?:\s*,\s*[a-dA-D])*/g 
+            // But wait, "A B" means Q1=A, Q2=B. "A,B" means Q1=A,B.
+            // We must distinguish space vs comma.
+
+            // Strategy:
+            // 1. Find the "Que" line to count how many questions.
+            // 2. Find the "Ans" line and split.
+            // Simpler: Just look for comma-groups.
+
             while ((match = ansBlockRegex.exec(keyBlock)) !== null) {
                 const lettersStr = match[1];
-                // Extract single letters A-D
-                const letters = lettersStr.match(/[A-D]/gi);
-                if (letters) {
-                    allAnswers.push(...letters);
+
+                // Split by whitespace to get tokens? 
+                // If "A,B" is present, it shouldn't have spaces inside ideally.
+                // If "A, B", split by space gives "A," and "B".
+                // We need a smart regex to capture "A" or "A,B" or "A, B" as one token?
+                // No, standard typically is "A B C" or "A,B C".
+
+                // Let's try matching [A-D](?:,[A-D])*
+                // This matches "A" or "A,B" or "A,B,C".
+                const answerTokens = lettersStr.match(/[A-D](?:\s*,\s*[A-D])*/gi);
+
+                if (answerTokens) {
+                    // We need to know WHICH questions these belong to.
+                    // We can try to finding the "Que ..." line preceding this "Ans ..." line.
+                    // But strictly, we can assume the Key applies to the 'Unsolved' questions Preceding this block?
+                    // Or better: The questions in the key usually range 1..N.
+                    // Let's assume sequential 1..N for the collected tokens in this Block.
+
+                    // Challenge: "Que 16..21". Tokens start at 16.
+                    // We need to parse the numbers from the "Que" row.
+
+                    // Try to parse the entire Table if possible.
+                    // "Que 1 2 ... \n Ans A B ..."
+
+                    // Fallback: If we find N tokens, and we have questions with numbers matching the range...
+                    // Let's just collect all tokens in order and map them to "1, 2, 3..." relative to this block? 
+                    // No, numbers might be "16, 17...".
+
+                    // LET'S PARSE THE "Que" ROWS too.
+                    // Look for "Que ... " inside keyBlock.
+                    // extract numbers.
                 }
             }
 
-            if (allAnswers.length > 0) {
-                console.log(`Extracted ${allAnswers.length} answers from key.`);
+            // REVISED PARSING FOR BLOCKS
+            // We'll extract pairs of (Que Line, Ans Line).
+            // Que Line: /Que\.?\s*((?:\d+\s*)+)/
+            // Ans Line: /Ans\.?\s*((?:[A-D,\s]+))/
 
-                // 3. Apply answers to UN-SOLVED questions using explicit mapping if possible
-                // Actually, the Key is usually 1..N SEQUENTIAL for the Exercise.
-                // We should collect only the !isSolvedExample questions and map them 1-to-1.
+            const lines = keyBlock.split(/\n|Que\./); // Split roughly
+            // This is getting parsing-heavy.
+            // Alternative: "Smart token stitching" 1..N
+            // Capture all numbers in the block -> [1, 2, ... 16 ... ]
+            // Capture all answer tokens -> [A, B, ... C ... ]
 
-                const exerciseQuestions = questions.filter(q => !(q as any)._isSolvedExample);
+            const allNums = keyBlock.match(/\b\d+\b/g); // Simple numbers
+            const allAns = keyBlock.match(/[A-D](?:\s*,\s*[A-D])*/gi); // Answers "A" or "A,B"
 
-                exerciseQuestions.forEach((q, idx) => {
-                    if (idx < allAnswers.length) {
-                        const ansLetter = allAnswers[idx].toUpperCase();
-                        // Only overwrite if not already set (or if regex set it to empty)
-                        // But usually Key is authoritative.
+            // Filter nums to be reasonable question numbers (e.g. < 200)
+            const cleanNums = allNums?.filter(n => parseInt(n) < 200 && parseInt(n) > 0);
 
-                        let fullAns = "";
-                        if (ansLetter === 'A') fullAns = q.optionA || "Option A";
-                        if (ansLetter === 'B') fullAns = q.optionB || "Option B";
-                        if (ansLetter === 'C') fullAns = q.optionC || "Option C";
-                        if (ansLetter === 'D') fullAns = q.optionD || "Option D";
-
-                        q.correct = `(${ansLetter}) ${fullAns}`;
-                    }
-                });
-
-                // 4. CLEANUP: Truncate the garbage from the last question
-                const cleanStr = potentialKeyText.substring(0, splitIndex).trim();
-                if (foundInField === "optionD") {
-                    lastQ.optionD = cleanStr;
-                } else {
-                    lastQ.text = cleanStr;
+            if (cleanNums && allAns && Math.abs(cleanNums.length - allAns.length) < 5) {
+                // If counts are seemingly aligned
+                const count = Math.min(cleanNums.length, allAns.length);
+                for (let i = 0; i < count; i++) {
+                    keyMap.set(cleanNums[i], allAns[i].toUpperCase().replace(/\s/g, ""));
                 }
-                // Remove trailing "D:" or similar artifacts if checking Option D left it empty? 
-                // Usually fine.
+            }
+
+            // CLEANUP
+            const cleanStr = potentialKeyText.substring(0, splitIndex).trim();
+            if (foundInField === "optionD") {
+                q.optionD = cleanStr;
+            } else {
+                q.text = cleanStr;
             }
         }
     }
 
+    if (keyMap.size > 0) {
+        console.log(`Global Key Map Constructed: ${keyMap.size} entries.`);
+        // Apply to Unsolved
+        const exerciseQuestions = questions.filter(q => !(q as any)._isSolvedExample);
+        exerciseQuestions.forEach(q => {
+            const num = (q as any)._tempNumber;
+            if (num && keyMap.has(num)) {
+                const ansLetter = keyMap.get(num);
+                // Format: (A) Text or (A,C) Text (if multiple?)
+                q.correct = `(${ansLetter})`;
+
+                // If single letter, append text
+                if (ansLetter && ansLetter.length === 1 && !ansLetter.includes(",")) {
+                    if (ansLetter === 'A') q.correct += " " + (q.optionA || "");
+                    if (ansLetter === 'B') q.correct += " " + (q.optionB || "");
+                    if (ansLetter === 'C') q.correct += " " + (q.optionC || "");
+                    if (ansLetter === 'D') q.correct += " " + (q.optionD || "");
+                }
+            }
+        });
+    }
+
     // FINAL FILTER: Return ONLY the Unsolved ones as requested by user?
-    // User asked "extract questions ... only the unsolved ones".
-    // So we filter out the Solved Examples.
     return questions.filter(q => !(q as any)._isSolvedExample);
 }
