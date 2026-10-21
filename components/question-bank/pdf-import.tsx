@@ -43,19 +43,22 @@ export function PdfImport({ context, contextLabel, onSaved }: {
         setError(""); setSaved(""); setItems([]); setFailedPages([])
         const ctl = new AbortController()
         abort.current = ctl
+        // Ignore progress from a run that has already finished (late responses from
+        // parallel batches would otherwise leave the screen stuck on "Cancel").
+        const report = (p: ImportProgress) => { if (abort.current === ctl) setProgress(p) }
         try {
-            const rendered = await renderPdf(file, setProgress, ctl.signal)
+            const rendered = await renderPdf(file, report, ctl.signal)
             setPages(rendered)
-            const { questions, failed } = await extractQuestions(rendered, setProgress, ctl.signal)
+            const { questions, failed } = await extractQuestions(rendered, report, ctl.signal)
             setFailedPages(failed)
             if (questions.length === 0) throw new Error("No questions were found in this PDF.")
-            await attachFigures(questions, rendered, setProgress)
+            await attachFigures(questions, rendered, report)
             setItems(questions.map(q => ({ ...q, include: true })))
         } catch (e) {
             if (!ctl.signal.aborted) setError(e instanceof Error ? e.message : "Import failed")
         } finally {
-            setProgress(null)
             abort.current = null
+            setProgress(null)
         }
     }
 

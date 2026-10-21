@@ -151,20 +151,31 @@ export async function POST(req: Request) {
     }
     content.push({ type: "text", text: task(from, to, sizes.map(s => s.page)) })
 
+    // Streaming keeps a long response from hitting HTTP timeouts.
+    const callClaude = (withFallbacks: boolean) => client.beta.messages.stream({
+        model: MODEL,
+        max_tokens: 32000,
+        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content }],
+        output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
+        // If a safety filter declines (chemistry/biology can trip it), retry on the
+        // model Anthropic recommends for that case instead of failing.
+        ...(withFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+    }).finalMessage()
+
     try {
-        // Streaming keeps a long response from hitting HTTP timeouts.
-        const stream = client.beta.messages.stream({
-            model: MODEL,
-            max_tokens: 32000,
-            system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-            messages: [{ role: "user", content }],
-            output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
-            // If a safety filter declines (chemistry/biology can trip it), retry on the
-            // model Anthropic recommends for that case instead of failing.
-            betas: ["server-side-fallback-2026-07-01"],
-            fallbacks: "default",
-        })
-        const message = await stream.finalMessage()
+        let message: Anthropic.Beta.BetaMessage
+        try {
+            message = await callClaude(true)
+        } catch (error) {
+            // Some accounts can't use the fallback feature yet: retry once without it.
+            if (error instanceof Anthropic.BadRequestError && /fallback|beta/i.test(error.message)) {
+                console.warn("[PDF_EXTRACT] fallbacks rejected, retrying without:", error.message)
+                message = await callClaude(false)
+            } else {
+                throw error
+            }
+        }
 
         if (message.stop_reason === "refusal") {
             console.error("[PDF_EXTRACT] refusal", message.stop_details)
@@ -174,27 +185,66 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Pages ${from}–${to} have too much text to read at once.` }, { status: 422 })
         }
 
-        const text = message.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("")
-        const json = pixelBoxesToNormalized(JSON.parse(text), sizes)
+        // If a fallback model took over mid-answer, only its text is the real answer.
+        let text = ""
+        for (const block of message.content) {
+            if (block.type === "fallback") text = ""
+            else if (block.type === "text") text += block.text
+        }
+        let parsed: unknown
+        try {
+            parsed = JSON.parse(text)
+        } catch {
+            console.error("[PDF_EXTRACT] unparseable output", text.slice(0, 500))
+            return NextResponse.json({ error: "The AI's answer was incomplete. Retrying may help." }, { status: 502 })
+        }
+        const json = pixelBoxesToNormalized(parsed, sizes)
         return NextResponse.json(sanitizeExtraction(json, sizes.map(s => s.page)))
     } catch (error) {
-        if (error instanceof Anthropic.RateLimitError) {
-            return NextResponse.json({ error: "The AI service is busy. Try again in a minute." }, { status: 429 })
-        }
-        if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
-            console.error("[PDF_EXTRACT] auth", error.message)
-            return NextResponse.json({ error: "The AI key on the server is invalid. Check ANTHROPIC_API_KEY." }, { status: 503 })
-        }
-        // APIConnectionError is a subclass of APIError, so check it first.
-        if (error instanceof Anthropic.APIConnectionError) {
-            return NextResponse.json({ error: "Couldn't reach the AI service." }, { status: 502 })
-        }
-        if (error instanceof Anthropic.APIError) {
-            console.error("[PDF_EXTRACT]", error.status, error.message)
-            // 5xx / overloaded: the browser retries these
-            return NextResponse.json({ error: "The AI couldn't read these pages." }, { status: (error.status ?? 500) >= 500 ? 502 : 500 })
-        }
-        console.error("[PDF_EXTRACT]", error)
-        return NextResponse.json({ error: "The AI couldn't read these pages." }, { status: 500 })
+        const { status, message } = describeError(error)
+        return NextResponse.json({ error: message }, { status })
     }
 }
+
+/**
+ * Turn an API failure into a message an admin can act on. 503 means "every page
+ * will fail the same way" and stops the import; 429/502 are retried by the browser.
+ * Anthropic's own message is included where it helps (this route is staff-only).
+ */
+function describeError(error: unknown): { status: number; message: string } {
+    if (error instanceof Anthropic.APIError) console.error("[PDF_EXTRACT]", error.status, error.message)
+    else console.error("[PDF_EXTRACT]", error)
+
+    // Anthropic's own explanation, e.g. "model: claude-opus-5-5" (APIError.error is the parsed response body)
+    const body = error instanceof Anthropic.APIError ? (error.error as { error?: { message?: string } } | undefined) : undefined
+    const detail = (body?.error?.message ?? (error instanceof Error ? error.message.replace(/^\d{3}\s*/, "") : "")).slice(0, 300)
+
+    if (error instanceof Anthropic.RateLimitError) {
+        return { status: 429, message: "The AI service is busy. Try again in a minute." }
+    }
+    if (error instanceof Anthropic.AuthenticationError) {
+        return { status: 503, message: "The Claude API key on the server is invalid. Check ANTHROPIC_API_KEY in Vercel." }
+    }
+    if (error instanceof Anthropic.PermissionDeniedError) {
+        return { status: 503, message: `The Claude API key isn't allowed to do this: ${detail}` }
+    }
+    if (error instanceof Anthropic.NotFoundError) {
+        return { status: 503, message: `Model "${MODEL}" isn't available on this Claude API key. Set ANTHROPIC_MODEL in Vercel to a model your account can use. (${detail})` }
+    }
+    if (error instanceof Anthropic.BadRequestError && /credit balance/i.test(error.message)) {
+        return { status: 503, message: "Your Claude API account has no credit. Add credit at console.anthropic.com → Billing, then try again." }
+    }
+    // APIConnectionError is a subclass of APIError, so check it first.
+    if (error instanceof Anthropic.APIConnectionError) {
+        return { status: 502, message: "Couldn't reach the AI service." }
+    }
+    if (error instanceof Anthropic.BadRequestError) {
+        return { status: 503, message: `The Claude API rejected the request: ${detail}` }
+    }
+    if (error instanceof Anthropic.APIError) {
+        const status = error.status ?? 500
+        return { status: status >= 500 ? 502 : 500, message: `The Claude API returned an error (${status}): ${detail}` }
+    }
+    return { status: 500, message: `The AI couldn't read these pages: ${detail || "unknown error"}` }
+}
+
