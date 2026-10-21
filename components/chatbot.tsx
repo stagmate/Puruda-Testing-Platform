@@ -39,10 +39,15 @@ export function Chatbot() {
         try {
             const res = await fetch("/api/chat", {
                 method: "POST",
-                body: JSON.stringify({ message: input, history })
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: userMsg.text, history })
             })
-            const data = await res.json()
-            setMessages(prev => [...prev, { role: "model", text: data.response }])
+            if (res.status === 401) {
+                setMessages(prev => [...prev, { role: "model", text: "Please log in to chat with the assistant." }])
+            } else {
+                const data = await res.json()
+                setMessages(prev => [...prev, { role: "model", text: data.response || "Sorry, I encountered an error." }])
+            }
         } catch (e) {
             setMessages(prev => [...prev, { role: "model", text: "Sorry, I encountered an error." }])
         }

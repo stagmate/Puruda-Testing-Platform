@@ -16,7 +16,7 @@ export function StudentPerformanceExplorer() {
     useEffect(() => {
         const timer = setTimeout(() => {
             if (query.trim()) {
-                fetch(`/api/admin/users?search=${query}&role=STUDENT`)
+                fetch(`/api/admin/users?search=${encodeURIComponent(query)}&role=STUDENT`)
                     .then(res => res.json())
                     .then(data => setUsers(data.data || [])) // Fix: Extract .data
                     .catch(console.error)

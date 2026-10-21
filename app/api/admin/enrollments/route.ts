@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { requireRole, ADMIN_ONLY } from "@/lib/api-auth"
 
 // Get all enrollments as a flat list
 export async function GET() {
+    const auth = await requireRole(ADMIN_ONLY)
+    if (auth.response) return auth.response
+
     const batches = await db.batch.findMany({
         include: {
             students: {
@@ -31,6 +35,9 @@ export async function GET() {
 
 // Enroll a student in a batch
 export async function POST(req: Request) {
+    const auth = await requireRole(ADMIN_ONLY)
+    if (auth.response) return auth.response
+
     try {
         const { studentId, batchId } = await req.json()
 

@@ -1,5 +1,28 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Configuration
+
+Create a `.env` file (it is git-ignored, never commit it) with:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `NEXTAUTH_SECRET` | Long random string used to sign login sessions (`openssl rand -base64 32`) |
+| `NEXTAUTH_URL` | The site's public URL, e.g. `https://example.com` |
+| `GEMINI_API_KEYS` | Comma-separated Google Gemini API keys (or a single key in `GOOGLE_API_KEY`) |
+
+### Database schema
+
+`npm run build` applies the Prisma schema to the database (`prisma db push`)
+before building, so deploys create new tables automatically. It refuses any
+change that would drop data, and the build fails instead, leaving the previous
+deploy live. Run `npm run db:push` to apply the schema by hand, or
+`npm run build:app` to build without touching the database.
+
+### Seeding
+
+`npx prisma db seed` creates demo users. Change their passwords before going live.
+
 ## Getting Started
 
 First, run the development server:

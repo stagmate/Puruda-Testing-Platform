@@ -18,6 +18,7 @@ model User {
   // Student Relations
   batches   Batch[]  @relation("StudentBatches")
   results   TestResult[]
+  attempts  TestAttempt[]
 
   // Teacher Relations
   assignments TeacherAssignment[]
@@ -160,7 +161,22 @@ model Test {
   
   questions Question[] @relation("TestQuestions")
   results   TestResult[]
+  attempts  TestAttempt[]
   reviews   PerformanceReview[]
+}
+
+// One row per student per test: records when they started, so the server can
+// enforce the time limit and allow only a single submission.
+model TestAttempt {
+  id          String    @id @default(cuid())
+  testId      String
+  test        Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+
+  @@unique([testId, userId])
 }
 
 model TestResult {

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { requireRole, STAFF } from "@/lib/api-auth"
 
 export async function GET(req: Request, { params }: { params: Promise<{ testId: string }> }) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     try {
         const { testId } = await params
 

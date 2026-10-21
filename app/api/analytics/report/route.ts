@@ -11,7 +11,7 @@ export async function POST(req: Request) {
         if (!currentUser) return new NextResponse("Unauthorized", { status: 401 })
 
         // Get target student ID (Teachers can view any student, Students only themselves)
-        const { studentId } = await req.json()
+        const { studentId } = await req.json().catch(() => ({}))
         const targetId = (currentUser.role === "TEACHER" || currentUser.role === "ADMIN") && studentId
             ? studentId
             : currentUser.id
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
             },
             subjectPerformance: Object.entries(subjectStats).map(([subj, val]) => ({
                 subject: subj,
-                accuracy: Math.round((val.score / val.total) * 100)
+                accuracy: val.total > 0 ? Math.round((val.score / val.total) * 100) : 0
             })),
             recentHistory: results.slice(0, 5).map((r: any) => ({
                 test: r.test.title,

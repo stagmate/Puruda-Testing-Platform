@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { requireRole, STAFF } from "@/lib/api-auth"
 
 export async function POST(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     try {
         const body = await req.json()
-        const { courseId, subjectIds, count = 20, batchIds } = body
+        const { subjectIds } = body
+        const count = parseInt(body.count ?? 20)
 
-        if (!subjectIds || subjectIds.length === 0) {
+        if (!Number.isFinite(count) || count <= 0) {
+            return new NextResponse("Count must be a positive number", { status: 400 })
+        }
+        if (!Array.isArray(subjectIds) || subjectIds.length === 0) {
             return new NextResponse("Subject IDs required", { status: 400 })
         }
 
@@ -25,8 +33,12 @@ export async function POST(req: Request) {
         }
 
         // 2. Random Selection "AI" Logic
-        // Shuffle array
-        const shuffled = questions.sort(() => 0.5 - Math.random())
+        // Fisher-Yates shuffle (sorting with a random comparator is biased)
+        const shuffled = [...questions]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1))
+            ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
         const selected = shuffled.slice(0, count)
 
         // 3. Return selected IDs (UI will then submit them to create Test)

@@ -18,6 +18,9 @@ export default withAuth(
         if (path.startsWith("/teacher") && token.role !== "TEACHER") {
             return NextResponse.redirect(new URL("/unauthorized", req.url))
         }
+        if (path.startsWith("/print") && token.role !== "ADMIN" && token.role !== "TEACHER") {
+            return NextResponse.redirect(new URL("/unauthorized", req.url))
+        }
         if (path.startsWith("/student") && token.role !== "STUDENT") {
             // Optional: Allow admins to view student pages, else strict
             if (token.role === "ADMIN") return null
@@ -39,5 +42,6 @@ export const config = {
         "/admin/:path*",
         "/teacher/:path*",
         "/student/:path*",
+        "/print/:path*",
     ]
 }

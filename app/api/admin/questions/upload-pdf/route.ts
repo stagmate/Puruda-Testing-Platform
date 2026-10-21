@@ -7,6 +7,10 @@ import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import { writeFile, unlink } from "fs/promises";
 import path from "path";
 import { tmpdir } from "os";
+import { randomUUID } from "crypto";
+import { requireRole, STAFF } from "@/lib/api-auth";
+
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
 
 import { getRotatedKey, GEMINI_KEYS } from "@/lib/gemini-keys";
 // Import regex parser with alias to match existing code usage
@@ -36,6 +40,9 @@ function cleanJsonString(str: string) {
 }
 
 export async function POST(req: NextRequest) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     const startTime = Date.now();
     let tempPath: string | null = null;
     let fileUri: string | null = null;
@@ -46,8 +53,14 @@ export async function POST(req: NextRequest) {
         const formData = await req.formData()
         const file = formData.get("file") as File
 
-        if (!file) {
+        if (!file || typeof file === "string") {
             return new NextResponse(JSON.stringify({ error: "No file uploaded" }), { status: 400 })
+        }
+        if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+            return new NextResponse(JSON.stringify({ error: "Only PDF files are allowed" }), { status: 400 })
+        }
+        if (file.size > MAX_PDF_BYTES) {
+            return new NextResponse(JSON.stringify({ error: "PDF is too large (max 20 MB)" }), { status: 413 })
         }
 
         apiKey = getRotatedKey();
@@ -56,7 +69,6 @@ export async function POST(req: NextRequest) {
             return new NextResponse(JSON.stringify({ error: "Server configuration error: No valid API Key available." }), { status: 500 })
         }
 
-        console.log("Using API Key (last 4 chars):", apiKey.slice(-4))
 
         // Initialize Gemini
         const genAI = new GoogleGenerativeAI(apiKey)
@@ -65,7 +77,7 @@ export async function POST(req: NextRequest) {
         // Save file temporarily
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
-        tempPath = path.join(tmpdir(), `upload-${Date.now()}.pdf`)
+        tempPath = path.join(tmpdir(), `upload-${randomUUID()}.pdf`)
         if (!tempPath) throw new Error("Temp path not initialized");
         await writeFile(tempPath, buffer);
 

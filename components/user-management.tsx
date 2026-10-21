@@ -47,7 +47,7 @@ export function UserManagement() {
                 fetchUsers()
                 setNewUser({ name: "", email: "", password: "", role: "STUDENT" })
             } else {
-                alert("Failed to create user")
+                alert(`Failed to create user: ${await res.text()}`)
             }
         } catch (e) {
             alert("Error creating user")
@@ -56,7 +56,8 @@ export function UserManagement() {
 
     const handleDelete = async (id: string) => {
         if (!confirm("Are you sure?")) return
-        await fetch(`/api/admin/users?id=${id}`, { method: "DELETE" })
+        const res = await fetch(`/api/admin/users?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+        if (!res.ok) alert(`Could not delete user: ${await res.text()}`)
         fetchUsers()
     }
 
