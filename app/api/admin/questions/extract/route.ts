@@ -1,4 +1,4 @@
-// Reads a few rendered PDF pages with Claude (vision) and returns structured
+// Reads a few rendered PDF pages with OpenAI (vision) and returns structured
 // questions: text, options, type, answers, solutions and where each diagram is.
 // The browser renders the pages, calls this in batches, merges the results and
 // crops the diagrams itself.
@@ -8,21 +8,21 @@
 export const maxDuration = 300
 
 import { NextResponse } from "next/server"
-import Anthropic from "@anthropic-ai/sdk"
+import OpenAI from "openai"
 import { requireRole, STAFF } from "@/lib/api-auth"
 import { sanitizeExtraction, pixelBoxesToNormalized, type PageSize } from "@/lib/pdf-import/extraction"
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5"
-const EFFORT = (["low", "medium", "high"] as const).find(e => e === process.env.ANTHROPIC_EFFORT) ?? "medium"
+const MODEL = process.env.OPENAI_MODEL || "gpt-5.5"
+// Optional: only sent when set, since not every model accepts it.
+const REASONING = (["minimal", "low", "medium", "high"] as const).find(e => e === process.env.OPENAI_REASONING_EFFORT)
 const MAX_PAGES_PER_CALL = 6
 const MAX_IMAGE_CHARS = 3_000_000 // ~2.2 MB per page image as base64
-const MAX_PAGE_PX = 2576           // Claude sees images up to this long edge without resizing
 
 // ---- Output schema (structured outputs: every object closed, every field required) ----
 const nullable = (schema: object) => ({ anyOf: [schema, { type: "null" }] })
 const BOX = {
     type: "object",
-    description: "Pixel box on that page image: (x1, y1) top-left, (x2, y2) bottom-right",
+    description: "Box on that page in thousandths of the page width (x) and height (y): (x1, y1) top-left, (x2, y2) bottom-right, each 0-1000",
     properties: { x1: { type: "integer" }, y1: { type: "integer" }, x2: { type: "integer" }, y2: { type: "integer" } },
     required: ["x1", "y1", "x2", "y2"],
     additionalProperties: false,
@@ -77,8 +77,8 @@ const SCHEMA = {
     additionalProperties: false,
 }
 
-// Stable instructions live in the system prompt so they can be cached across batches.
-const SYSTEM = `You transcribe exam question papers into structured data. You receive images of printed pages; each is preceded by its page number and pixel size.
+// Stable instructions come first so OpenAI can cache them across batches.
+const SYSTEM = `You transcribe exam question papers into structured data. You receive images of printed pages; each is preceded by its page number.
 
 For each question:
 - number: the printed question number, e.g. "17".
@@ -96,7 +96,7 @@ Text formatting (question text, options and solutions):
 - Use Unicode for symbols: × → ⇌ ° Λ κ √ − ≈ ≤ ≥ Δ. Never use LaTeX commands or $ signs.
 - Keep numbers, units and signs exactly as printed. Transcribe; never solve or correct a question.
 
-Picture locations: "page" is the page the picture is on and "box" is in that page image's pixels, x1,y1 at the top-left corner of the picture and x2,y2 at its bottom-right. Box just the picture with its own labels, axis titles and legend, not the surrounding question text.
+Picture locations: "page" is the page the picture is on and "box" is measured in thousandths of that page: x from 0 (left edge) to 1000 (right edge), y from 0 (top edge) to 1000 (bottom edge). x1,y1 is the top-left corner of the picture and x2,y2 its bottom-right. Box just the picture with its own labels, axis titles and legend, not the surrounding question text. Be generous rather than cutting off part of a picture.
 
 answers: one entry per answer-key or worked-solution entry on the pages you are asked about: the question number, the answer exactly as printed (e.g. "B", "A, C", "12"), and the solution text if one is given (same formatting), else null.
 
@@ -109,7 +109,7 @@ function task(from: number, to: number, sent: number[]) {
         (context.length ? ` Pages ${context.join(", ")} are context only: use them to finish a question that continues across a page break, but do not extract questions that start on them.` : "")
 }
 
-const client = new Anthropic() // reads ANTHROPIC_API_KEY
+let client: OpenAI | null = null // created on first use (reads OPENAI_API_KEY)
 
 type PageIn = { page: number; image: string; width: number; height: number }
 
@@ -117,9 +117,10 @@ export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-        return NextResponse.json({ error: "AI is not configured. Set ANTHROPIC_API_KEY on the server." }, { status: 503 })
+    if (!process.env.OPENAI_API_KEY) {
+        return NextResponse.json({ error: "AI is not configured. Set OPENAI_API_KEY on the server." }, { status: 503 })
     }
+    client ??= new OpenAI()
 
     let body: { pages?: PageIn[]; from?: number; to?: number }
     try {
@@ -135,71 +136,52 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `Send 1–${MAX_PAGES_PER_CALL} pages and a valid page range` }, { status: 400 })
     }
 
-    const content: Anthropic.Beta.BetaContentBlockParam[] = []
-    const sizes: PageSize[] = []
+    const content: OpenAI.Chat.ChatCompletionContentPart[] = []
+    const sent: number[] = []
     for (const p of pages) {
-        const m = typeof p?.image === "string" && /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(p.image)
-        const okSize = [p?.width, p?.height].every(v => Number.isInteger(v) && v > 0 && v <= MAX_PAGE_PX)
-        if (!m || p.image.length > MAX_IMAGE_CHARS || !Number.isInteger(p.page) || !okSize) {
+        const ok = typeof p?.image === "string" && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p.image)
+        if (!ok || p.image.length > MAX_IMAGE_CHARS || !Number.isInteger(p.page)) {
             return NextResponse.json({ error: `Page ${p?.page ?? "?"} is not a valid image` }, { status: 400 })
         }
-        sizes.push({ page: p.page, width: p.width, height: p.height })
+        sent.push(p.page)
         content.push(
-            { type: "text", text: `Page ${p.page} (${p.width}×${p.height} px):` },
-            { type: "image", source: { type: "base64", media_type: m[1] as "image/jpeg" | "image/png" | "image/webp", data: m[2] } },
+            { type: "text", text: `Page ${p.page}:` },
+            { type: "image_url", image_url: { url: p.image, detail: "high" } },
         )
     }
-    content.push({ type: "text", text: task(from, to, sizes.map(s => s.page)) })
-
-    // Streaming keeps a long response from hitting HTTP timeouts.
-    const callClaude = (withFallbacks: boolean) => client.beta.messages.stream({
-        model: MODEL,
-        max_tokens: 32000,
-        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content }],
-        output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
-        // If a safety filter declines (chemistry/biology can trip it), retry on the
-        // model Anthropic recommends for that case instead of failing.
-        ...(withFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-    }).finalMessage()
+    content.push({ type: "text", text: task(from, to, sent) })
 
     try {
-        let message: Anthropic.Beta.BetaMessage
-        try {
-            message = await callClaude(true)
-        } catch (error) {
-            // Some accounts can't use the fallback feature yet: retry once without it.
-            if (error instanceof Anthropic.BadRequestError && /fallback|beta/i.test(error.message)) {
-                console.warn("[PDF_EXTRACT] fallbacks rejected, retrying without:", error.message)
-                message = await callClaude(false)
-            } else {
-                throw error
-            }
-        }
+        const completion = await client.chat.completions.create({
+            model: MODEL,
+            max_completion_tokens: 32000,
+            messages: [
+                { role: "system", content: SYSTEM },
+                { role: "user", content },
+            ],
+            response_format: { type: "json_schema", json_schema: { name: "question_paper", strict: true, schema: SCHEMA } },
+            ...(REASONING ? { reasoning_effort: REASONING } : {}),
+        })
 
-        if (message.stop_reason === "refusal") {
-            console.error("[PDF_EXTRACT] refusal", message.stop_details)
+        const choice = completion.choices[0]
+        if (choice?.message?.refusal) {
+            console.error("[PDF_EXTRACT] refusal", choice.message.refusal)
             return NextResponse.json({ error: `The AI declined to read pages ${from}–${to}. Add those questions by hand.` }, { status: 422 })
         }
-        if (message.stop_reason === "max_tokens") {
+        if (choice?.finish_reason === "length") {
             return NextResponse.json({ error: `Pages ${from}–${to} have too much text to read at once.` }, { status: 422 })
         }
 
-        // If a fallback model took over mid-answer, only its text is the real answer.
-        let text = ""
-        for (const block of message.content) {
-            if (block.type === "fallback") text = ""
-            else if (block.type === "text") text += block.text
-        }
         let parsed: unknown
         try {
-            parsed = JSON.parse(text)
+            parsed = JSON.parse(choice?.message?.content ?? "")
         } catch {
-            console.error("[PDF_EXTRACT] unparseable output", text.slice(0, 500))
+            console.error("[PDF_EXTRACT] unparseable output", (choice?.message?.content ?? "").slice(0, 500))
             return NextResponse.json({ error: "The AI's answer was incomplete. Retrying may help." }, { status: 502 })
         }
-        const json = pixelBoxesToNormalized(parsed, sizes)
-        return NextResponse.json(sanitizeExtraction(json, sizes.map(s => s.page)))
+        // Boxes come back in thousandths of each page; reuse the pixel converter with a 1000×1000 "page".
+        const perMille: PageSize[] = sent.map(page => ({ page, width: 1000, height: 1000 }))
+        return NextResponse.json(sanitizeExtraction(pixelBoxesToNormalized(parsed, perMille), sent))
     } catch (error) {
         const { status, message } = describeError(error)
         return NextResponse.json({ error: message }, { status })
@@ -209,42 +191,39 @@ export async function POST(req: Request) {
 /**
  * Turn an API failure into a message an admin can act on. 503 means "every page
  * will fail the same way" and stops the import; 429/502 are retried by the browser.
- * Anthropic's own message is included where it helps (this route is staff-only).
+ * OpenAI's own message is included where it helps (this route is staff-only).
  */
 function describeError(error: unknown): { status: number; message: string } {
-    if (error instanceof Anthropic.APIError) console.error("[PDF_EXTRACT]", error.status, error.message)
+    if (error instanceof OpenAI.APIError) console.error("[PDF_EXTRACT]", error.status, error.code, error.message)
     else console.error("[PDF_EXTRACT]", error)
 
-    // Anthropic's own explanation, e.g. "model: claude-opus-5-5" (APIError.error is the parsed response body)
-    const body = error instanceof Anthropic.APIError ? (error.error as { error?: { message?: string } } | undefined) : undefined
-    const detail = (body?.error?.message ?? (error instanceof Error ? error.message.replace(/^\d{3}\s*/, "") : "")).slice(0, 300)
+    const detail = (error instanceof Error ? error.message.replace(/^\d{3}\s*/, "") : "").slice(0, 300)
 
-    if (error instanceof Anthropic.RateLimitError) {
-        return { status: 429, message: "The AI service is busy. Try again in a minute." }
-    }
-    if (error instanceof Anthropic.AuthenticationError) {
-        return { status: 503, message: "The Claude API key on the server is invalid. Check ANTHROPIC_API_KEY in Vercel." }
-    }
-    if (error instanceof Anthropic.PermissionDeniedError) {
-        return { status: 503, message: `The Claude API key isn't allowed to do this: ${detail}` }
-    }
-    if (error instanceof Anthropic.NotFoundError) {
-        return { status: 503, message: `Model "${MODEL}" isn't available on this Claude API key. Set ANTHROPIC_MODEL in Vercel to a model your account can use. (${detail})` }
-    }
-    if (error instanceof Anthropic.BadRequestError && /credit balance/i.test(error.message)) {
-        return { status: 503, message: "Your Claude API account has no credit. Add credit at console.anthropic.com → Billing, then try again." }
-    }
     // APIConnectionError is a subclass of APIError, so check it first.
-    if (error instanceof Anthropic.APIConnectionError) {
+    if (error instanceof OpenAI.APIConnectionError) {
         return { status: 502, message: "Couldn't reach the AI service." }
     }
-    if (error instanceof Anthropic.BadRequestError) {
-        return { status: 503, message: `The Claude API rejected the request: ${detail}` }
+    if (error instanceof OpenAI.RateLimitError) {
+        if (error.code === "insufficient_quota") {
+            return { status: 503, message: "Your OpenAI account has no credit left. Add credit at platform.openai.com → Billing, then try again." }
+        }
+        return { status: 429, message: "The AI service is busy. Try again in a minute." }
     }
-    if (error instanceof Anthropic.APIError) {
+    if (error instanceof OpenAI.AuthenticationError) {
+        return { status: 503, message: "The OpenAI API key on the server is invalid. Check OPENAI_API_KEY in Vercel." }
+    }
+    if (error instanceof OpenAI.PermissionDeniedError) {
+        return { status: 503, message: `The OpenAI API key isn't allowed to do this: ${detail}` }
+    }
+    if (error instanceof OpenAI.NotFoundError) {
+        return { status: 503, message: `Model "${MODEL}" isn't available on this OpenAI key. Set OPENAI_MODEL in Vercel to a model your account can use. (${detail})` }
+    }
+    if (error instanceof OpenAI.BadRequestError) {
+        return { status: 503, message: `OpenAI rejected the request: ${detail}` }
+    }
+    if (error instanceof OpenAI.APIError) {
         const status = error.status ?? 500
-        return { status: status >= 500 ? 502 : 500, message: `The Claude API returned an error (${status}): ${detail}` }
+        return { status: status >= 500 ? 502 : 500, message: `OpenAI returned an error (${status}): ${detail}` }
     }
     return { status: 500, message: `The AI couldn't read these pages: ${detail || "unknown error"}` }
 }
-
