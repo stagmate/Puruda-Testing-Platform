@@ -140,13 +140,15 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /** Crop a figure out of its rendered page (with a little padding) as a PNG. */
-export async function cropFigure(page: PageImage, fig: FigureRef, pad = 0.012): Promise<Blob> {
+// Margin around AI-located boxes: wider sideways (harmless whitespace), tighter
+// top and bottom so neighbouring text lines don't creep in.
+export async function cropFigure(page: PageImage, fig: FigureRef, padX = 0.02, padY = 0.012): Promise<Blob> {
     const img = await loadImage(page.dataUrl)
     const [y1, x1, y2, x2] = fig.box.map(v => v / 1000)
-    const left = Math.max(0, (x1 - pad) * img.width)
-    const top = Math.max(0, (y1 - pad) * img.height)
-    const right = Math.min(img.width, (x2 + pad) * img.width)
-    const bottom = Math.min(img.height, (y2 + pad) * img.height)
+    const left = Math.max(0, (x1 - padX) * img.width)
+    const top = Math.max(0, (y1 - padY) * img.height)
+    const right = Math.min(img.width, (x2 + padX) * img.width)
+    const bottom = Math.min(img.height, (y2 + padY) * img.height)
     const canvas = document.createElement("canvas")
     canvas.width = Math.max(1, Math.round(right - left))
     canvas.height = Math.max(1, Math.round(bottom - top))
