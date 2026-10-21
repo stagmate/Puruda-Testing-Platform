@@ -60,19 +60,19 @@ async function main() {
 
     const admin = await prisma.user.upsert({
         where: { email: "admin@puruda.com" },
-        update: { password },
+        update: {}, // never reset passwords of existing accounts
         create: { email: "admin@puruda.com", name: "Admin User", role: "ADMIN", password },
     })
 
     const teacher = await prisma.user.upsert({
         where: { email: "teacher@puruda.com" },
-        update: { password },
+        update: {}, // never reset passwords of existing accounts
         create: { email: "teacher@puruda.com", name: "Teacher User", role: "TEACHER", password },
     })
 
     const student = await prisma.user.upsert({
         where: { email: "student@puruda.com" },
-        update: { password },
+        update: {}, // never reset passwords of existing accounts
         create: { email: "student@puruda.com", name: "Student User", role: "STUDENT", password },
     })
 
@@ -119,7 +119,7 @@ async function main() {
     for (let i = 1; i <= 5; i++) {
         const s = await prisma.user.upsert({
             where: { email: `student${i}@puruda.com` },
-            update: { password },
+            update: {}, // never reset passwords of existing accounts
             create: { email: `student${i}@puruda.com`, name: `Demo Student ${i}`, role: "STUDENT", password }
         })
         demoStudents.push(s)

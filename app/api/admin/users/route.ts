@@ -1,29 +1,29 @@
 import { NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { hashPassword } from "@/lib/hash"
-import { getServerSession } from "next-auth"
-// import { authOptions } from "../auth/[...nextauth]/route" // Need to export authOptions properly
+import { requireRole, STAFF, ADMIN_ONLY, isRole } from "@/lib/api-auth"
 
-// Helper to check admin
-async function isAdmin() {
-    const session = await getServerSession()
-    return session?.user?.email === "admin@puruda.com" // Simplistic check for now, ideally check role from token
-}
+const MAX_PAGE_SIZE = 100
 
 export async function GET(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     const { searchParams } = new URL(req.url)
-    const page = parseInt(searchParams.get("page") || "1")
-    const limit = parseInt(searchParams.get("limit") || "50")
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1)
+    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(searchParams.get("limit") || "50") || 50))
     const skip = (page - 1) * limit
 
     const search = searchParams.get("search")
-    const role = searchParams.get("role")
+    // Teachers may only look up students; admins can filter by any role.
+    const role = auth.user.role === "ADMIN" ? searchParams.get("role") : "STUDENT"
 
-    const where: any = {}
+    const where: Prisma.UserWhereInput = {}
     if (search) {
         where.OR = [
-            { name: { contains: search } }, // Case insensitive in SQLite/Postgres usually needs mode: 'insensitive'
-            { email: { contains: search } }
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } }
         ]
     }
     if (role) {
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
             select: { id: true, name: true, email: true, role: true, createdAt: true },
             orderBy: { createdAt: 'desc' }
         }),
-        db.user.count()
+        db.user.count({ where })
     ])
 
     return NextResponse.json({
@@ -53,38 +53,64 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-    //   if (!await isAdmin()) return new NextResponse("Unauthorized", { status: 401 })
+    const auth = await requireRole(ADMIN_ONLY)
+    if (auth.response) return auth.response
 
     try {
-        const body = await req.json()
-        const { email, password, name, role } = body
+        const { email, password, name, role } = await req.json()
 
-        const hashedPassword = await hashPassword(password)
+        if (!email || typeof email !== "string" || !password || typeof password !== "string") {
+            return new NextResponse("Email and password are required", { status: 400 })
+        }
+        if (password.length < 8) {
+            return new NextResponse("Password must be at least 8 characters", { status: 400 })
+        }
+        if (role !== undefined && !isRole(role)) {
+            return new NextResponse("Invalid role", { status: 400 })
+        }
 
         const user = await db.user.create({
             data: {
-                email,
-                password: hashedPassword,
+                email: email.trim(),
+                password: await hashPassword(password),
                 name,
-                role,
-            }
+                role: role ?? "STUDENT",
+            },
+            // Never send the password hash back to the browser.
+            select: { id: true, name: true, email: true, role: true, createdAt: true }
         })
 
         return NextResponse.json(user)
     } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return new NextResponse("A user with this email already exists", { status: 409 })
+        }
+        console.error("[USERS_POST]", error)
         return new NextResponse("Error creating user", { status: 500 })
     }
 }
 
 export async function DELETE(req: Request) {
-    //   if (!await isAdmin()) return new NextResponse("Unauthorized", { status: 401 })
+    const auth = await requireRole(ADMIN_ONLY)
+    if (auth.response) return auth.response
 
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
 
     if (!id) return new NextResponse("ID required", { status: 400 })
+    if (id === auth.user.id) return new NextResponse("You cannot delete your own account", { status: 400 })
 
-    await db.user.delete({ where: { id } })
-
-    return NextResponse.json({ success: true })
+    try {
+        await db.user.delete({ where: { id } })
+        return NextResponse.json({ success: true })
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError) {
+            if (error.code === "P2025") return new NextResponse("User not found", { status: 404 })
+            if (error.code === "P2003") {
+                return new NextResponse("This user has test results, reviews or assignments and can't be deleted", { status: 409 })
+            }
+        }
+        console.error("[USERS_DELETE]", error)
+        return new NextResponse("Error deleting user", { status: 500 })
+    }
 }

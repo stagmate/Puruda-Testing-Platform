@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { requireRole, STAFF } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 
 // GET: Fetch all active announcements (Public/Protected)
 export async function GET() {
+    const auth = await requireRole()
+    if (auth.response) return auth.response
+
     try {
         const announcements = await db.announcement.findMany({
             where: { active: true },
@@ -19,15 +21,15 @@ export async function GET() {
 
 // POST: Create new announcement (Admin/Teacher only)
 export async function POST(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+    const user = auth.user
+
     try {
-        const session = await getServerSession(authOptions)
-        const user = session?.user as any
-
-        if (!user || !user.role || (user.role !== "ADMIN" && user.role !== "TEACHER")) {
-            return NextResponse.json({ error: "Internal Error" }, { status: 500 })
-        }
-
         const { title, content } = await req.json()
+        if (!title || !content) {
+            return NextResponse.json({ error: "Title and content are required" }, { status: 400 })
+        }
 
         const announcement = await db.announcement.create({
             data: {

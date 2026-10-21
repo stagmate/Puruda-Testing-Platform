@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { Prisma } from "@prisma/client"
+import { requireRole, STAFF } from "@/lib/api-auth"
+import { isDifficulty, isQuestionType } from "@/lib/question-enums"
 
 // GET: Fetch questions with optional filters
 export async function GET(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     const { searchParams } = new URL(req.url)
     const courseId = searchParams.get("courseId")
     const batchId = searchParams.get("batchId")
@@ -11,16 +17,16 @@ export async function GET(req: Request) {
     const subtopicId = searchParams.get("subtopicId")
     const difficulty = searchParams.get("difficulty")
 
-    const where: any = {}
+    const where: Prisma.QuestionWhereInput = {}
     if (courseId) where.courseId = courseId
     if (batchId) where.batchId = batchId
     if (subjectId) where.subjectId = subjectId
     if (chapterId) where.chapterId = chapterId
     if (subtopicId) where.subtopicId = subtopicId
-    if (difficulty) where.difficulty = difficulty
+    if (difficulty && isDifficulty(difficulty)) where.difficulty = difficulty
 
-    const page = parseInt(searchParams.get("page") || "1")
-    const limit = parseInt(searchParams.get("limit") || "50")
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1)
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") || "50") || 50))
     const skip = (page - 1) * limit
 
     const [questions, total] = await Promise.all([
@@ -53,12 +59,21 @@ export async function GET(req: Request) {
 
 // POST: Create a single question
 export async function POST(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     try {
         const body = await req.json()
         const { text, options, correct, courseId, batchId, subjectId, chapterId, subtopicId, difficulty, type, imageUrl, optionImages } = body
 
-        if (!text || !correct) {
+        if (!text || !correct || (Array.isArray(correct) && correct.length === 0)) {
             return new NextResponse("Missing fields", { status: 400 })
+        }
+        if (type !== undefined && !isQuestionType(type)) {
+            return new NextResponse("Invalid question type", { status: 400 })
+        }
+        if (difficulty !== undefined && difficulty !== "" && !isDifficulty(difficulty)) {
+            return new NextResponse("Invalid difficulty", { status: 400 })
         }
 
         // Validate options based on type
@@ -66,7 +81,7 @@ export async function POST(req: Request) {
         if (type === "INTEGER") {
             validOptions = []; // Integer questions don't need options
         } else {
-            if (!options || options.length < 2) {
+            if (!Array.isArray(options) || options.filter((o: unknown) => String(o ?? "").trim()).length < 2) {
                 return new NextResponse("At least 2 options required", { status: 400 })
             }
         }
@@ -81,9 +96,9 @@ export async function POST(req: Request) {
                 optionCImageUrl: optionImages?.[2] || null,
                 optionDImageUrl: optionImages?.[3] || null,
                 correct: typeof correct === 'object' ? JSON.stringify(correct) : correct, // Handle array for MULTIPLE
-                courseId,
-                batchId,
-                subjectId,
+                courseId: courseId || null,
+                batchId: batchId || null,
+                subjectId: subjectId || null,
                 chapterId: chapterId || null,
                 subtopicId: subtopicId || null,
                 difficulty: difficulty || "INTERMEDIATE",

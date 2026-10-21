@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { requireRole, ADMIN_ONLY } from "@/lib/api-auth"
 
 export async function GET() {
+    const auth = await requireRole(ADMIN_ONLY)
+    if (auth.response) return auth.response
+
     const assignments = await db.teacherAssignment.findMany({
         include: {
             teacher: { select: { name: true, email: true } },
@@ -18,6 +22,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+    const auth = await requireRole(ADMIN_ONLY)
+    if (auth.response) return auth.response
+
     try {
         const { teacherId, batchId, subjectId } = await req.json()
 

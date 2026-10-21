@@ -9,22 +9,35 @@ export async function POST(req: Request) {
         const session = await getServerSession(authOptions)
         const user = session?.user as any
 
-        if (!user || (user.role !== "TEACHER" && user.role !== "ADMIN")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        if (user.role !== "TEACHER" && user.role !== "ADMIN") {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 })
         }
 
         const body = await req.json()
         const { studentId, testId, subjectId, batchId, feedback, rating } = body
 
+        if (!studentId || !feedback || typeof feedback !== "string") {
+            return NextResponse.json({ error: "Student and feedback are required" }, { status: 400 })
+        }
+        const ratingNum = rating === undefined || rating === null || rating === "" ? undefined : parseInt(rating)
+        if (ratingNum !== undefined && (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5)) {
+            return NextResponse.json({ error: "Rating must be between 1 and 5" }, { status: 400 })
+        }
+        const student = await db.user.findUnique({ where: { id: studentId }, select: { role: true } })
+        if (!student || student.role !== "STUDENT") {
+            return NextResponse.json({ error: "Student not found" }, { status: 404 })
+        }
+
         const review = await db.performanceReview.create({
             data: {
                 studentId,
                 teacherId: user.id,
-                testId,
-                subjectId,
-                batchId,
+                testId: testId || null,
+                subjectId: subjectId || null,
+                batchId: batchId || null,
                 feedback,
-                rating: rating ? parseInt(rating) : undefined,
+                rating: ratingNum,
                 status: user.role === "ADMIN" ? "APPROVED" : "PENDING" // Auto-approve if admin writes it
             }
         })
@@ -91,11 +104,13 @@ export async function PATCH(req: Request) {
         const session = await getServerSession(authOptions)
         const user = session?.user as any
 
-        if (!user || user.role !== "ADMIN") {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-        }
+        if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        if (user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
         const { reviewId, status } = await req.json() // status: APPROVED | REJECTED
+        if (!reviewId || !["APPROVED", "REJECTED", "PENDING"].includes(status)) {
+            return NextResponse.json({ error: "Invalid review or status" }, { status: 400 })
+        }
 
         const updated = await db.performanceReview.update({
             where: { id: reviewId },

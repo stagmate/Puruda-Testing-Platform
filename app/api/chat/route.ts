@@ -19,18 +19,49 @@ Keep answers concise and helpful.
 `
 
 import { getRotatedKey } from "@/lib/gemini-keys"
+import { requireRole } from "@/lib/api-auth"
+
+const MAX_MESSAGE_CHARS = 2000
+const MAX_HISTORY_TURNS = 20
+
+type ChatTurn = { role: "user" | "model"; parts: { text: string }[] }
+
+// Keep only well-formed user/model turns so callers can't inject other roles or huge payloads.
+function sanitizeHistory(history: unknown): ChatTurn[] {
+    if (!Array.isArray(history)) return []
+    return history
+        .filter((h): h is ChatTurn =>
+            !!h && (h.role === "user" || h.role === "model") && Array.isArray(h.parts))
+        .slice(-MAX_HISTORY_TURNS)
+        // The widget's greeting is a model turn; drop leading model turns so the
+        // conversation after the system prompt starts with the user.
+        .filter((h, i, arr) => arr.slice(0, i + 1).some(x => x.role === "user"))
+        .map(h => ({
+            role: h.role,
+            parts: h.parts
+                .filter(p => p && typeof p.text === "string")
+                .map(p => ({ text: p.text.slice(0, MAX_MESSAGE_CHARS) }))
+        }))
+}
 
 export async function POST(req: Request) {
+    // Logged-in users only, so outsiders can't spend the API quota.
+    const auth = await requireRole()
+    if (auth.response) return auth.response
+
     try {
         const apiKey = getRotatedKey();
         if (!apiKey) {
             return NextResponse.json({
-                response: "Config Error: No valid API Key found. Please add keys to Vercel or code configuration."
+                response: "The assistant isn't configured yet. Ask an admin to set GEMINI_API_KEYS."
             }, { status: 500 })
         }
 
         const genAI = new GoogleGenerativeAI(apiKey)
-        const { message, history = [] } = await req.json()
+        const body = await req.json().catch(() => ({}))
+        const message = typeof body.message === "string" ? body.message.trim().slice(0, MAX_MESSAGE_CHARS) : ""
+        if (!message) return NextResponse.json({ response: "Please type a message." }, { status: 400 })
+        const history = sanitizeHistory(body.history)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
 
         const chat = model.startChat({
@@ -45,15 +76,10 @@ export async function POST(req: Request) {
         const response = result.response.text()
 
         return NextResponse.json({ response })
-    } catch (error: any) {
+    } catch (error) {
         console.error("Chat Error Details:", error)
-        console.error("API Key Status:", process.env.GOOGLE_API_KEY ? "Present" : "Missing")
-
-        let errorMsg = "I'm having trouble connecting to my brain right now."
-        if (error.message?.includes("API key")) errorMsg = "Google API Key is invalid or expired."
-
         return NextResponse.json({
-            response: `${errorMsg} (Error: ${error.message || "Unknown"})`
+            response: "I'm having trouble connecting to my brain right now. Please try again later."
         }, { status: 500 })
     }
 }

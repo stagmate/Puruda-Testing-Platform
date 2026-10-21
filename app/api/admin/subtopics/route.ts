@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { requireRole, STAFF } from "@/lib/api-auth"
 
 export async function GET(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     const { searchParams } = new URL(req.url)
     const chapterId = searchParams.get("chapterId")
 
@@ -16,6 +20,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+
     try {
         const { name, chapterId } = await req.json()
         if (!name || !chapterId) return new NextResponse("Missing fields", { status: 400 })

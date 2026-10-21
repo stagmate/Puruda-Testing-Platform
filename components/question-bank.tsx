@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { parseQuestionCsv } from "@/lib/question-csv"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -260,23 +261,12 @@ export function QuestionBankManagement() {
         const reader = new FileReader()
         reader.onload = async (e) => {
             const text = e.target?.result as string
-            const rows = text.split("\n").slice(1) // Skip header
-            const questions = rows.map(row => {
-                // Simple CSV parse (handling commas inside quotes is tricky, simple split for now)
-                // Format: Text, OptionA, OptionB, OptionC, OptionD, Correct, Diff, Type
-                const cols = row.split(",")
-                if (cols.length < 6) return null
-                return {
-                    text: cols[0]?.trim(),
-                    optionA: cols[1]?.trim(),
-                    optionB: cols[2]?.trim(),
-                    optionC: cols[3]?.trim(),
-                    optionD: cols[4]?.trim(),
-                    correct: cols[5]?.trim(),
-                    difficulty: cols[6]?.trim() || "INTERMEDIATE",
-                    type: cols[7]?.trim() || "SINGLE"
-                }
-            }).filter(q => q && q.text)
+            const questions = parseQuestionCsv(text)
+            if (questions.length === 0) {
+                alert("No questions found in the CSV. Check the column layout.")
+                setIsBulkUploading(false)
+                return
+            }
 
             const context = {
                 courseId: selectedCourse,
@@ -296,7 +286,7 @@ export function QuestionBankManagement() {
                 setCsvFile(null)
                 fetchQuestions()
             } else {
-                alert("Bulk upload failed. Check console.")
+                alert(`Bulk upload failed: ${await res.text()}`)
             }
             setIsBulkUploading(false)
         }

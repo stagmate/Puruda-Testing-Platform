@@ -1,5 +1,5 @@
 "use client" // Convert to client component for demo toggle
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { TestInterface } from "@/components/test-interface"
@@ -8,18 +8,33 @@ import { LogoutButton } from "@/components/logout-button"
 import { NewsWidget } from "@/components/news-widget"
 import { StudentReviewsList } from "@/components/student-reviews-list"
 
+type StudentTestSummary = {
+    id: string
+    title: string
+    type: string
+    duration: number
+    startTime: string | null
+    endTime: string | null
+    submitted: boolean
+    _count: { questions: number }
+}
+
 export default function StudentDashboard() {
     const [showTest, setShowTest] = useState(false)
     const [selectedTestId, setSelectedTestId] = useState("")
-    const [tests, setTests] = useState<any[]>([])
+    const [tests, setTests] = useState<StudentTestSummary[]>([])
 
-    // Fetch tests
-    useState(() => {
-        fetch("/api/admin/tests").then(r => r.json()).then(setTests)
-    })
+    const loadTests = useCallback(() => {
+        fetch("/api/student/tests")
+            .then(r => (r.ok ? r.json() : []))
+            .then(setTests)
+            .catch(() => setTests([]))
+    }, [])
+
+    useEffect(() => { loadTests() }, [loadTests])
 
     if (showTest && selectedTestId) {
-        return <TestInterface testId={selectedTestId} onComplete={() => setShowTest(false)} />
+        return <TestInterface testId={selectedTestId} onComplete={() => { setShowTest(false); loadTests() }} />
     }
 
     return (
@@ -56,16 +71,20 @@ export default function StudentDashboard() {
                                 <div>
                                     <h3 className="font-bold text-lg">{test.title}</h3>
                                     <p className="text-sm text-muted-foreground">
-                                        {test.questions?.length || "?"} Questions • {test.type}
+                                        {test._count.questions} Questions • {test.type}{test.duration ? ` • ${test.duration} min` : ""}
                                     </p>
                                     {test.startTime && <p className="text-xs text-orange-600 mt-1">Starts: {new Date(test.startTime).toLocaleString()}</p>}
                                 </div>
-                                <Button
-                                    onClick={() => { setSelectedTestId(test.id); setShowTest(true) }}
-                                    className="bg-indigo-600 hover:bg-indigo-700"
-                                >
-                                    Start Test
-                                </Button>
+                                {test.submitted ? (
+                                    <span className="text-sm font-medium text-green-600">Submitted</span>
+                                ) : (
+                                    <Button
+                                        onClick={() => { setSelectedTestId(test.id); setShowTest(true) }}
+                                        className="bg-indigo-600 hover:bg-indigo-700"
+                                    >
+                                        Start Test
+                                    </Button>
+                                )}
                             </div>
                         ))}
                     </div>

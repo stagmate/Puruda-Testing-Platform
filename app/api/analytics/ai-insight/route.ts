@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!)
+import { getRotatedKey } from "@/lib/gemini-keys"
 
 export async function POST(req: Request) {
     try {
@@ -58,17 +57,19 @@ export async function POST(req: Request) {
         `
 
         // 3. Call Gemini
-        if (!process.env.GOOGLE_API_KEY) {
+        const apiKey = getRotatedKey()
+        if (!apiKey) {
             return NextResponse.json({ analysis: "System Error: AI Service Unavailable." }, { status: 500 })
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
+        const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: "gemini-2.0-flash" })
         const result = await model.generateContent(prompt)
         const analysis = result.response.text()
 
         return NextResponse.json({ analysis })
 
     } catch (error) {
+        console.error("[AI_INSIGHT]", error)
         return NextResponse.json({ error: "Internal Error" }, { status: 500 })
     }
 }

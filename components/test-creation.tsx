@@ -133,8 +133,9 @@ export function TestCreation() {
                 courseId: selectedCourse,
                 batchIds: selectedBatches,
                 questionIds: finalQuestionIds,
-                startTime: startTime || null,
-                endTime: endTime || null,
+                // datetime-local has no timezone; convert in the browser so the teacher's local time is kept.
+                startTime: startTime ? new Date(startTime).toISOString() : null,
+                endTime: endTime ? new Date(endTime).toISOString() : null,
                 resultMode,
                 showRank
             })
