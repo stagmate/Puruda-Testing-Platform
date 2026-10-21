@@ -9,7 +9,10 @@ Create a `.env` file (it is git-ignored, never commit it) with:
 | `DATABASE_URL` | PostgreSQL connection string |
 | `NEXTAUTH_SECRET` | Long random string used to sign login sessions (`openssl rand -base64 32`) |
 | `NEXTAUTH_URL` | The site's public URL, e.g. `https://example.com` |
-| `GEMINI_API_KEYS` | Comma-separated Google Gemini API keys (or a single key in `GOOGLE_API_KEY`) |
+| `ANTHROPIC_API_KEY` | Claude API key, used by Question Bank → Import PDF to read question papers |
+| `ANTHROPIC_MODEL` | Optional. Claude model for PDF import (default `claude-opus-5-5`) |
+| `ANTHROPIC_EFFORT` | Optional. `low`, `medium` (default) or `high`: higher reads more carefully but is slower |
+| `GEMINI_API_KEYS` | Comma-separated Google Gemini API keys (or a single key in `GOOGLE_API_KEY`), used by the chatbot and AI insights |
 
 ### Database schema
 

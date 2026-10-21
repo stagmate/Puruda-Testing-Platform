@@ -26,6 +26,7 @@ export function PdfImport({ context, contextLabel, onSaved }: {
     const [file, setFile] = useState<File | null>(null)
     const [progress, setProgress] = useState<ImportProgress | null>(null)
     const [error, setError] = useState("")
+    const [failedPages, setFailedPages] = useState<string[]>([])
     const [pages, setPages] = useState<PageImage[]>([])
     const [items, setItems] = useState<Item[]>([])
     const [onlyIssues, setOnlyIssues] = useState(false)
@@ -39,13 +40,14 @@ export function PdfImport({ context, contextLabel, onSaved }: {
 
     const run = async () => {
         if (!file) return
-        setError(""); setSaved(""); setItems([])
+        setError(""); setSaved(""); setItems([]); setFailedPages([])
         const ctl = new AbortController()
         abort.current = ctl
         try {
             const rendered = await renderPdf(file, setProgress, ctl.signal)
             setPages(rendered)
-            const questions = await extractQuestions(rendered, setProgress, ctl.signal)
+            const { questions, failed } = await extractQuestions(rendered, setProgress, ctl.signal)
+            setFailedPages(failed)
             if (questions.length === 0) throw new Error("No questions were found in this PDF.")
             await attachFigures(questions, rendered, setProgress)
             setItems(questions.map(q => ({ ...q, include: true })))
@@ -131,6 +133,13 @@ export function PdfImport({ context, contextLabel, onSaved }: {
                     </div>
                 )}
                 {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>}
+                {failedPages.length > 0 && (
+                    <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
+                        <p className="font-medium">Some pages couldn&apos;t be read, so their questions are missing below:</p>
+                        <ul className="mt-1 list-disc pl-5">{failedPages.map(f => <li key={f}>{f}</li>)}</ul>
+                        <p className="mt-1">Add those questions with Add, or import a PDF of just those pages.</p>
+                    </div>
+                )}
                 {saved && <p className="flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800"><CheckCircle2 className="h-4 w-4" />{saved}</p>}
             </div>
 

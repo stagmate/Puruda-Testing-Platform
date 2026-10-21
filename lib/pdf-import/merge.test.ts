@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { parseAnswer, mergeExtractions, stripLabel } from "./merge"
-import { sanitizeExtraction, type Extraction } from "./extraction"
+import { sanitizeExtraction, pixelBoxesToNormalized, type Extraction } from "./extraction"
 
 describe("parseAnswer", () => {
     it("reads option letters in common formats", () => {
@@ -85,5 +85,28 @@ describe("sanitizeExtraction", () => {
 
     it("survives garbage", () => {
         expect(sanitizeExtraction("nope", [1])).toEqual({ questions: [], answers: [] })
+    })
+})
+
+describe("pixelBoxesToNormalized", () => {
+    it("converts pixel boxes on each page to the 0-1000 scale and fixes swapped corners", () => {
+        const raw = {
+            questions: [{
+                number: "17", page: 3, text: "t", type: "SINGLE",
+                figures: [{ page: 3, box: { x1: 417, y1: 588, x2: 1050, y2: 1085 } }],
+                options: [{ label: "A", text: "", figure: { page: 3, box: { x1: 700, y1: 200, x2: 140, y2: 100 } } }],
+            }],
+            answers: [],
+        }
+        const out = sanitizeExtraction(pixelBoxesToNormalized(raw, [{ page: 3, width: 1400, height: 1980 }]), [3])
+        expect(out.questions[0].figures).toEqual([{ page: 3, box: [297, 298, 548, 750] }])
+        expect(out.questions[0].options[0].figure).toEqual({ page: 3, box: [51, 100, 101, 500] })
+    })
+
+    it("drops boxes for unknown pages or bad numbers", () => {
+        const raw = { questions: [{ number: "1", page: 1, text: "t", type: "SINGLE", options: [],
+            figures: [{ page: 9, box: { x1: 0, y1: 0, x2: 10, y2: 10 } }, { page: 1, box: { x1: "a", y1: 0, x2: 1, y2: 1 } }] }], answers: [] }
+        const out = sanitizeExtraction(pixelBoxesToNormalized(raw, [{ page: 1, width: 100, height: 100 }]), [1])
+        expect(out.questions[0].figures).toEqual([])
     })
 })

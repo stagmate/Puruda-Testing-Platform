@@ -81,3 +81,42 @@ export function sanitizeExtraction(raw: unknown, sentPages: number[]): Extractio
 
     return { questions, answers }
 }
+
+export type PageSize = { page: number; width: number; height: number }
+
+/**
+ * The AI gives picture boxes in pixels of the page image it saw ({x1,y1,x2,y2}).
+ * Return a copy with them converted to [ymin, xmin, ymax, xmax] on a 0–1000 scale of that
+ * page, which is what sanitizeExtraction and the cropper use. Unknown pages or
+ * malformed boxes become null and are dropped by the sanitiser.
+ */
+export function pixelBoxesToNormalized(raw: unknown, sizes: PageSize[]): unknown {
+    const dims = new Map(sizes.map(s => [s.page, s]))
+    const convert = (fig: unknown) => {
+        if (!fig || typeof fig !== "object") return null
+        const f = fig as { page?: unknown; box?: unknown }
+        const size = dims.get(Math.round(Number(f.page)))
+        const b = f.box as Record<string, unknown> | null
+        if (!size || !b || typeof b !== "object") return null
+        const [x1, y1, x2, y2] = [b.x1, b.y1, b.x2, b.y2].map(Number)
+        if (![x1, y1, x2, y2].every(Number.isFinite)) return null
+        const nx = (x: number) => Math.round((x / size.width) * 1000)
+        const ny = (y: number) => Math.round((y / size.height) * 1000)
+        return {
+            page: size.page,
+            box: [ny(Math.min(y1, y2)), nx(Math.min(x1, x2)), ny(Math.max(y1, y2)), nx(Math.max(x1, x2))],
+        }
+    }
+    const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    const questions = Array.isArray(obj.questions) ? obj.questions : []
+    return {
+        ...obj,
+        questions: questions.map((q: Record<string, unknown>) => ({
+            ...q,
+            figures: Array.isArray(q?.figures) ? q.figures.map(convert) : [],
+            options: Array.isArray(q?.options)
+                ? q.options.map((o: Record<string, unknown>) => ({ ...o, figure: convert(o?.figure) }))
+                : [],
+        })),
+    }
+}

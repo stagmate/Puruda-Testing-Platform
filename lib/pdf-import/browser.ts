@@ -8,8 +8,8 @@ import type { Extraction, FigureRef } from "./extraction"
 import { mergeExtractions, type ImportedQuestion } from "./merge"
 
 const RENDER_WIDTH = 1400      // px; enough for crisp diagrams, small enough to upload
-const FOCUS_PAGES = 3          // pages each AI call is responsible for
-const CONCURRENCY = 2
+const FOCUS_PAGES = 2          // pages each AI call is responsible for (keeps each call well under a minute or two)
+const CONCURRENCY = 3
 const MAX_PAGES = 120
 
 export type PageImage = { page: number; dataUrl: string; width: number; height: number }
@@ -59,20 +59,24 @@ export async function renderPdf(file: File, onProgress?: (p: ImportProgress) => 
     }
 }
 
+class FatalImportError extends ImportError {}
+
 async function extractBatch(pages: PageImage[], from: number, to: number, signal?: AbortSignal): Promise<Extraction> {
     const send = pages.filter(p => p.page >= from - 1 && p.page <= to + 1)
     for (let attempt = 0; ; attempt++) {
         const res = await fetch("/api/admin/questions/extract", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ from, to, pages: send.map(p => ({ page: p.page, image: p.dataUrl })) }),
+            body: JSON.stringify({ from, to, pages: send.map(p => ({ page: p.page, image: p.dataUrl, width: p.width, height: p.height })) }),
             signal,
         })
         if (res.ok) return res.json()
         const msg = await res.json().then(j => j.error).catch(() => res.statusText)
-        // Rate limits are common on free AI quotas: wait and retry a few times.
-        if ((res.status === 429 || res.status === 502) && attempt < 3) {
-            await new Promise(r => setTimeout(r, 4000 * (attempt + 1)))
+        // Not configured / not allowed: every batch would fail the same way.
+        if (res.status === 503 || res.status === 401 || res.status === 403) throw new FatalImportError(msg || `Error ${res.status}`)
+        // Busy, overloaded or timed out: wait and retry a couple of times.
+        if ([429, 502, 504].includes(res.status) && attempt < 2) {
+            await new Promise(r => setTimeout(r, 5000 * (attempt + 1)))
             continue
         }
         throw new ImportError(`Pages ${from}–${to}: ${msg || `error ${res.status}`}`)
@@ -91,17 +95,29 @@ async function pool<T, R>(items: T[], limit: number, fn: (item: T, i: number) =>
     return out
 }
 
+/**
+ * Read every page with the AI. A batch that still fails after retries is skipped
+ * and reported in `failed`, so one bad page doesn't lose the rest of the paper.
+ */
 export async function extractQuestions(pages: PageImage[], onProgress?: (p: ImportProgress) => void, signal?: AbortSignal) {
     const ranges: [number, number][] = []
     for (let s = 1; s <= pages.length; s += FOCUS_PAGES) ranges.push([s, Math.min(pages.length, s + FOCUS_PAGES - 1)])
     let done = 0
+    const failed: string[] = []
     onProgress?.({ stage: "read", done, total: ranges.length })
     const results = await pool(ranges, CONCURRENCY, async ([from, to]) => {
-        const r = await extractBatch(pages, from, to, signal)
-        onProgress?.({ stage: "read", done: ++done, total: ranges.length })
-        return r
+        try {
+            return await extractBatch(pages, from, to, signal)
+        } catch (e) {
+            if (e instanceof FatalImportError || signal?.aborted) throw e
+            failed.push(e instanceof Error ? e.message : `Pages ${from}–${to} failed`)
+            return { questions: [], answers: [] } as Extraction
+        } finally {
+            onProgress?.({ stage: "read", done: ++done, total: ranges.length })
+        }
     })
-    return mergeExtractions(results)
+    if (failed.length === ranges.length) throw new ImportError(failed[0])
+    return { questions: mergeExtractions(results), failed: failed.sort() }
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

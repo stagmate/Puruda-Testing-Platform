@@ -1,121 +1,127 @@
-// Reads a few rendered PDF pages with Gemini (vision) and returns structured
-// questions: text, options, type, answers, solutions and the location of any
-// diagrams. The browser renders the pages, calls this in batches, merges the
-// results and crops the diagrams itself.
+// Reads a few rendered PDF pages with Claude (vision) and returns structured
+// questions: text, options, type, answers, solutions and where each diagram is.
+// The browser renders the pages, calls this in batches, merges the results and
+// crops the diagrams itself.
 
-export const maxDuration = 60
+// Long enough for a slow batch. Vercel caps this per plan (300 s on Hobby with
+// fluid compute); the browser retries a batch that fails.
+export const maxDuration = 300
 
 import { NextResponse } from "next/server"
-import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from "@google/generative-ai"
+import Anthropic from "@anthropic-ai/sdk"
 import { requireRole, STAFF } from "@/lib/api-auth"
-import { getAllKeys } from "@/lib/gemini-keys"
-import { sanitizeExtraction } from "@/lib/pdf-import/extraction"
+import { sanitizeExtraction, pixelBoxesToNormalized, type PageSize } from "@/lib/pdf-import/extraction"
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash"
-const MAX_PAGES_PER_CALL = 8
-const MAX_IMAGE_CHARS = 2_000_000 // ~1.5 MB per page image as base64
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5"
+const EFFORT = (["low", "medium", "high"] as const).find(e => e === process.env.ANTHROPIC_EFFORT) ?? "medium"
+const MAX_PAGES_PER_CALL = 6
+const MAX_IMAGE_CHARS = 3_000_000 // ~2.2 MB per page image as base64
+const MAX_PAGE_PX = 2576           // Claude sees images up to this long edge without resizing
 
-const FIGURE: ResponseSchema = {
-    type: SchemaType.OBJECT,
-    properties: {
-        page: { type: SchemaType.INTEGER, description: "Page number the picture is on" },
-        box: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.INTEGER },
-            description: "[ymin, xmin, ymax, xmax] of the picture, normalised 0-1000 for that page",
-        },
-    },
-    required: ["page", "box"],
+// ---- Output schema (structured outputs: every object closed, every field required) ----
+const nullable = (schema: object) => ({ anyOf: [schema, { type: "null" }] })
+const BOX = {
+    type: "object",
+    description: "Pixel box on that page image: (x1, y1) top-left, (x2, y2) bottom-right",
+    properties: { x1: { type: "integer" }, y1: { type: "integer" }, x2: { type: "integer" }, y2: { type: "integer" } },
+    required: ["x1", "y1", "x2", "y2"],
+    additionalProperties: false,
 }
-
-const SCHEMA: ResponseSchema = {
-    type: SchemaType.OBJECT,
+const FIGURE = {
+    type: "object",
+    properties: { page: { type: "integer" }, box: BOX },
+    required: ["page", "box"],
+    additionalProperties: false,
+}
+const SCHEMA = {
+    type: "object",
     properties: {
         questions: {
-            type: SchemaType.ARRAY,
+            type: "array",
             items: {
-                type: SchemaType.OBJECT,
+                type: "object",
                 properties: {
-                    number: { type: SchemaType.STRING },
-                    page: { type: SchemaType.INTEGER },
-                    section: { type: SchemaType.STRING, nullable: true },
-                    text: { type: SchemaType.STRING },
-                    type: { type: SchemaType.STRING, format: "enum", enum: ["SINGLE", "MULTIPLE", "INTEGER"] },
+                    number: { type: "string" },
+                    page: { type: "integer" },
+                    section: nullable({ type: "string" }),
+                    text: { type: "string" },
+                    type: { type: "string", enum: ["SINGLE", "MULTIPLE", "INTEGER"] },
                     options: {
-                        type: SchemaType.ARRAY,
+                        type: "array",
                         items: {
-                            type: SchemaType.OBJECT,
-                            properties: {
-                                label: { type: SchemaType.STRING },
-                                text: { type: SchemaType.STRING },
-                                figure: { ...FIGURE, nullable: true },
-                            },
-                            required: ["label", "text"],
+                            type: "object",
+                            properties: { label: { type: "string" }, text: { type: "string" }, figure: nullable(FIGURE) },
+                            required: ["label", "text", "figure"],
+                            additionalProperties: false,
                         },
                     },
-                    figures: { type: SchemaType.ARRAY, items: FIGURE },
-                    answer: { type: SchemaType.STRING, nullable: true },
-                    solution: { type: SchemaType.STRING, nullable: true },
+                    figures: { type: "array", items: FIGURE },
+                    answer: nullable({ type: "string" }),
+                    solution: nullable({ type: "string" }),
                 },
-                required: ["number", "page", "text", "type", "options", "figures"],
+                required: ["number", "page", "section", "text", "type", "options", "figures", "answer", "solution"],
+                additionalProperties: false,
             },
         },
         answers: {
-            type: SchemaType.ARRAY,
+            type: "array",
             items: {
-                type: SchemaType.OBJECT,
-                properties: {
-                    number: { type: SchemaType.STRING },
-                    answer: { type: SchemaType.STRING, nullable: true },
-                    solution: { type: SchemaType.STRING, nullable: true },
-                },
-                required: ["number"],
+                type: "object",
+                properties: { number: { type: "string" }, answer: nullable({ type: "string" }), solution: nullable({ type: "string" }) },
+                required: ["number", "answer", "solution"],
+                additionalProperties: false,
             },
         },
     },
     required: ["questions", "answers"],
+    additionalProperties: false,
 }
 
-function prompt(from: number, to: number, sent: number[]) {
-    const range = from === to ? `page ${from}` : `pages ${from}–${to}`
-    const context = sent.filter(p => p < from || p > to)
-    return `You are extracting exam questions from images of a printed question paper. Each image is one page and is preceded by its page number.
-
-Extract every question that STARTS on ${range}.${context.length ? ` Pages ${context.join(", ")} are context only: use them to finish a question that continues across a page break, but do not extract questions that start on them.` : ""}
-Also put every answer-key entry and worked solution printed on ${range} into "answers".
+// Stable instructions live in the system prompt so they can be cached across batches.
+const SYSTEM = `You transcribe exam question papers into structured data. You receive images of printed pages; each is preceded by its page number and pixel size.
 
 For each question:
 - number: the printed question number, e.g. "17".
+- page: the page the question starts on.
 - text: the question stem exactly as printed, without the number and without the options.
-- options: in printed order, label as printed (A, B, C, D) and the option text. If an option is, or contains, a picture, give its location in "figure" and keep any printed text.
+- options: in printed order, label as printed (A, B, C, D) and the option text. If an option is, or contains, a picture, give its location in "figure" and keep any printed text; otherwise "figure" is null.
 - figures: the location of every diagram, graph, chart, structure or table image that belongs to the question stem. Do not describe pictures in words.
 - If one picture holds several labelled panels that the options refer to (e.g. curves A–D), put the whole picture in the question's figures, not in the options.
 - type: "INTEGER" if the question has no options and expects a numeric answer; "MULTIPLE" if the paper says one or more options may be correct, or its answer has more than one option; otherwise "SINGLE".
 - answer and solution: only if printed right next to the question; otherwise null.
-- section: the section heading the question sits under, if any.
+- section: the section heading the question sits under, or null.
 
 Text formatting (question text, options and solutions):
 - Subscripts as _{...} and superscripts as ^{...}: H_{2}O, 1.93 × 10^{5}, Cu^{2+}, SO_{4}^{2−}, E°_{cell}, Λ°_{m}, K_{sp}.
 - Use Unicode for symbols: × → ⇌ ° Λ κ √ − ≈ ≤ ≥ Δ. Never use LaTeX commands or $ signs.
-- Keep numbers, units and signs exactly as printed.
+- Keep numbers, units and signs exactly as printed. Transcribe; never solve or correct a question.
 
-Picture locations: "page" is the page the picture is on and "box" is [ymin, xmin, ymax, xmax] normalised to 0–1000 for that page image. Box just the picture with its own labels, axis titles and legend, not the surrounding question text.
+Picture locations: "page" is the page the picture is on and "box" is in that page image's pixels, x1,y1 at the top-left corner of the picture and x2,y2 at its bottom-right. Box just the picture with its own labels, axis titles and legend, not the surrounding question text.
 
-answers: one entry per answer-key or worked-solution entry: number, the answer exactly as printed (e.g. "B", "A, C", "12"), and the solution text if one is given.
+answers: one entry per answer-key or worked-solution entry on the pages you are asked about: the question number, the answer exactly as printed (e.g. "B", "A, C", "12"), and the solution text if one is given (same formatting), else null.
 
-Ignore running headers, footers and page numbers. Return only the JSON.`
+Ignore running headers, footers and page numbers.`
+
+function task(from: number, to: number, sent: number[]) {
+    const range = from === to ? `page ${from}` : `pages ${from}–${to}`
+    const context = sent.filter(p => p < from || p > to)
+    return `Extract every question that starts on ${range}, and every answer-key entry and worked solution printed on ${range}.` +
+        (context.length ? ` Pages ${context.join(", ")} are context only: use them to finish a question that continues across a page break, but do not extract questions that start on them.` : "")
 }
+
+const client = new Anthropic() // reads ANTHROPIC_API_KEY
+
+type PageIn = { page: number; image: string; width: number; height: number }
 
 export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
-    const keys = getAllKeys()
-    if (keys.length === 0) {
-        return NextResponse.json({ error: "AI is not configured. Set GEMINI_API_KEYS on the server." }, { status: 503 })
+    if (!process.env.ANTHROPIC_API_KEY) {
+        return NextResponse.json({ error: "AI is not configured. Set ANTHROPIC_API_KEY on the server." }, { status: 503 })
     }
 
-    let body: { pages?: { page: number; image: string }[]; from?: number; to?: number }
+    let body: { pages?: PageIn[]; from?: number; to?: number }
     try {
         body = await req.json()
     } catch {
@@ -129,40 +135,66 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `Send 1–${MAX_PAGES_PER_CALL} pages and a valid page range` }, { status: 400 })
     }
 
-    const parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = []
-    const sent: number[] = []
+    const content: Anthropic.Beta.BetaContentBlockParam[] = []
+    const sizes: PageSize[] = []
     for (const p of pages) {
         const m = typeof p?.image === "string" && /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(p.image)
-        if (!m || p.image.length > MAX_IMAGE_CHARS || !Number.isInteger(p.page)) {
+        const okSize = [p?.width, p?.height].every(v => Number.isInteger(v) && v > 0 && v <= MAX_PAGE_PX)
+        if (!m || p.image.length > MAX_IMAGE_CHARS || !Number.isInteger(p.page) || !okSize) {
             return NextResponse.json({ error: `Page ${p?.page ?? "?"} is not a valid image` }, { status: 400 })
         }
-        sent.push(p.page)
-        parts.push({ text: `Page ${p.page}:` }, { inlineData: { mimeType: m[1], data: m[2] } })
+        sizes.push({ page: p.page, width: p.width, height: p.height })
+        content.push(
+            { type: "text", text: `Page ${p.page} (${p.width}×${p.height} px):` },
+            { type: "image", source: { type: "base64", media_type: m[1] as "image/jpeg" | "image/png" | "image/webp", data: m[2] } },
+        )
     }
-    parts.push({ text: prompt(from, to, sent) })
+    content.push({ type: "text", text: task(from, to, sizes.map(s => s.page)) })
 
-    // Try a couple of keys: one may be rate-limited.
-    const shuffled = [...keys].sort(() => Math.random() - 0.5).slice(0, 3)
-    let lastError = ""
-    for (const key of shuffled) {
-        try {
-            const model = new GoogleGenerativeAI(key).getGenerativeModel({
-                model: MODEL,
-                generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
-            })
-            const result = await model.generateContent(parts)
-            const json = JSON.parse(result.response.text())
-            return NextResponse.json(sanitizeExtraction(json, sent))
-        } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error)
-            console.error("[PDF_EXTRACT]", lastError)
-            if (!/429|quota|rate|503|overloaded|unavailable/i.test(lastError)) break
+    try {
+        // Streaming keeps a long response from hitting HTTP timeouts.
+        const stream = client.beta.messages.stream({
+            model: MODEL,
+            max_tokens: 32000,
+            system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+            messages: [{ role: "user", content }],
+            output_config: { effort: EFFORT, format: { type: "json_schema", schema: SCHEMA } },
+            // If a safety filter declines (chemistry/biology can trip it), retry on the
+            // model Anthropic recommends for that case instead of failing.
+            betas: ["server-side-fallback-2026-07-01"],
+            fallbacks: "default",
+        })
+        const message = await stream.finalMessage()
+
+        if (message.stop_reason === "refusal") {
+            console.error("[PDF_EXTRACT] refusal", message.stop_details)
+            return NextResponse.json({ error: `The AI declined to read pages ${from}–${to}. Add those questions by hand.` }, { status: 422 })
         }
-    }
+        if (message.stop_reason === "max_tokens") {
+            return NextResponse.json({ error: `Pages ${from}–${to} have too much text to read at once.` }, { status: 422 })
+        }
 
-    const busy = /429|quota|rate/i.test(lastError)
-    return NextResponse.json(
-        { error: busy ? "The AI service is busy or out of quota. Try again in a minute." : "The AI couldn't read these pages." },
-        { status: busy ? 429 : 502 }
-    )
+        const text = message.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("")
+        const json = pixelBoxesToNormalized(JSON.parse(text), sizes)
+        return NextResponse.json(sanitizeExtraction(json, sizes.map(s => s.page)))
+    } catch (error) {
+        if (error instanceof Anthropic.RateLimitError) {
+            return NextResponse.json({ error: "The AI service is busy. Try again in a minute." }, { status: 429 })
+        }
+        if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
+            console.error("[PDF_EXTRACT] auth", error.message)
+            return NextResponse.json({ error: "The AI key on the server is invalid. Check ANTHROPIC_API_KEY." }, { status: 503 })
+        }
+        // APIConnectionError is a subclass of APIError, so check it first.
+        if (error instanceof Anthropic.APIConnectionError) {
+            return NextResponse.json({ error: "Couldn't reach the AI service." }, { status: 502 })
+        }
+        if (error instanceof Anthropic.APIError) {
+            console.error("[PDF_EXTRACT]", error.status, error.message)
+            // 5xx / overloaded: the browser retries these
+            return NextResponse.json({ error: "The AI couldn't read these pages." }, { status: (error.status ?? 500) >= 500 ? 502 : 500 })
+        }
+        console.error("[PDF_EXTRACT]", error)
+        return NextResponse.json({ error: "The AI couldn't read these pages." }, { status: 500 })
+    }
 }
