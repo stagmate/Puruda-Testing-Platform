@@ -206,14 +206,14 @@ export function TestCreation() {
             <CardContent>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Left: Create Form */}
-                    <div className="space-y-4 border-r pr-8">
+                    <div className="space-y-4 lg:border-r lg:pr-8">
                         <div className="space-y-2">
                             <Label>Test Title</Label>
                             <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. JEE Mains Mock 1" />
                         </div>
 
                         {/* Scheduling Section */}
-                        <div className="grid grid-cols-2 gap-4 p-4 border rounded-md bg-slate-50">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border rounded-md bg-slate-50">
                             <div className="space-y-2">
                                 <Label>Start Time (Optional)</Label>
                                 <Input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} />

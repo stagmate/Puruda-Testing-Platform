@@ -1,7 +1,14 @@
+"use client"
+
+import { usePathname } from "next/navigation"
+import { isDashboardPath } from "@/lib/dashboard-routes"
 import { GraduationCap } from "lucide-react"
 import Link from "next/link"
 
 export function GlobalHeader() {
+    const pathname = usePathname()
+    if (isDashboardPath(pathname)) return null
+
     return (
         <header className="bg-white border-b sticky top-0 z-[100] h-16 shadow-sm">
             <div className="container mx-auto h-full px-4 flex items-center justify-between">

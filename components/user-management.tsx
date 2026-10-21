@@ -28,7 +28,9 @@ export function UserManagement() {
         if (res.ok) {
             const { data, meta } = await res.json()
             setUsers(data)
-            setTotalPages(meta.totalPages)
+            setTotalPages(Math.max(1, meta.totalPages))
+            // If the last user on a page was deleted, step back a page.
+            if (page > 1 && data.length === 0) setPage(p => Math.max(1, p - 1))
         }
     }
 
@@ -108,7 +110,21 @@ export function UserManagement() {
                 </Dialog>
             </div>
 
-            <div className="border rounded-lg">
+            {/* Phones: stacked list so role and delete stay visible */}
+            <ul className="divide-y rounded-lg border sm:hidden">
+                {users.map(user => (
+                    <li key={user.id} className="flex items-center gap-3 p-3">
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{user.name || "-"}</p>
+                            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                            <span className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${roleBadge(user.role)}`}>{user.role}</span>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => handleDelete(user.id)} className="shrink-0 text-red-600 hover:text-red-700">Delete</Button>
+                    </li>
+                ))}
+            </ul>
+
+            <div className="hidden border rounded-lg sm:block">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -124,10 +140,7 @@ export function UserManagement() {
                                 <TableCell>{user.name || "-"}</TableCell>
                                 <TableCell>{user.email}</TableCell>
                                 <TableCell>
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${user.role === "ADMIN" ? "bg-red-100 text-red-800" :
-                                        user.role === "TEACHER" ? "bg-blue-100 text-blue-800" :
-                                            "bg-green-100 text-green-800"
-                                        }`}>
+                                    <span className={`px-2 py-1 rounded text-xs font-bold ${roleBadge(user.role)}`}>
                                         {user.role}
                                     </span>
                                 </TableCell>
@@ -139,6 +152,20 @@ export function UserManagement() {
                     </TableBody>
                 </Table>
             </div>
+
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between gap-2 text-sm">
+                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+                    <span className="text-muted-foreground tabular-nums">Page {page} of {totalPages}</span>
+                    <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+                </div>
+            )}
         </div>
     )
+}
+
+function roleBadge(role: string) {
+    if (role === "ADMIN") return "bg-red-100 text-red-800"
+    if (role === "TEACHER") return "bg-blue-100 text-blue-800"
+    return "bg-green-100 text-green-800"
 }
