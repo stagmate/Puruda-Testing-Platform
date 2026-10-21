@@ -13,14 +13,11 @@ Create a `.env` file (it is git-ignored, never commit it) with:
 
 ### Database schema
 
-Installing dependencies no longer changes the database. After pulling schema
-changes, apply them explicitly:
-
-```bash
-npm run db:push
-```
-
-Prisma refuses changes that would drop data unless you confirm them.
+`npm run build` applies the Prisma schema to the database (`prisma db push`)
+before building, so deploys create new tables automatically. It refuses any
+change that would drop data, and the build fails instead, leaving the previous
+deploy live. Run `npm run db:push` to apply the schema by hand, or
+`npm run build:app` to build without touching the database.
 
 ### Seeding
 
