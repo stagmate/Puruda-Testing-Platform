@@ -125,3 +125,21 @@ export function gradeTest(
     }
     return { score, total: questions.length }
 }
+
+export const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F"]
+
+/** Indexes of the correct options for SINGLE/MULTIPLE questions (empty if unresolvable). */
+export function correctOptionIndexes(question: GradableQuestion): number[] {
+    const options = parseOptions(question.options)
+    const correct = String(question.correct ?? "")
+    if ((question.type || "SINGLE") === "MULTIPLE") return resolveMultipleCorrect(correct, options)
+    const idx = resolveOptionIndex(correct, options)
+    return idx === -1 ? [] : [idx]
+}
+
+/** Human-readable answer: "B", "A, C", or the integer value. */
+export function formatCorrectAnswer(question: GradableQuestion): string {
+    if (question.type === "INTEGER") return String(question.correct ?? "")
+    const idxs = correctOptionIndexes(question)
+    return idxs.length ? idxs.map(i => OPTION_LETTERS[i] ?? String(i + 1)).join(", ") : String(question.correct ?? "")
+}

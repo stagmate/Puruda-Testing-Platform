@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { RichText } from "@/components/rich-text"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -262,8 +263,11 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const options = Array.isArray(question.options) ? question.options : []
     const lowTime = timeLeft !== null && timeLeft < 5 * 60 * 1000
 
+    // The container scrolls inside fullscreen too: a fullscreen element doesn't scroll by
+    // default, which hid Next/Submit below the fold on tall questions. Auto margins centre
+    // short content without clipping long content (justify-center would).
     return (
-        <div ref={containerRef} className="bg-background min-h-screen flex flex-col items-center justify-center p-4">
+        <div ref={containerRef} className="bg-background min-h-screen h-full overflow-y-auto flex flex-col items-center p-4">
             {/* Fullscreen gate (skipped on devices that can't go fullscreen, e.g. iPhone) */}
             {fullscreenSupported && !isFullscreen && (
                 <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-6 text-center backdrop-blur-sm">
@@ -279,7 +283,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 </div>
             )}
 
-            <div className="w-full max-w-3xl mb-4 flex flex-wrap gap-2 justify-between items-center text-sm font-medium">
+            <div className="mt-auto w-full max-w-3xl mb-4 flex flex-wrap gap-2 justify-between items-center text-sm font-medium">
                 <div className="flex items-center gap-2 text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-100">
                     <Eye className="h-4 w-4 animate-pulse" />
                     AI Proctoring Active
@@ -296,7 +300,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 </div>
             </div>
 
-            <Card className="w-full max-w-3xl mx-auto shadow-2xl border-t-4 border-indigo-500 select-none">
+            <Card className="mb-auto w-full max-w-3xl mx-auto shadow-2xl border-t-4 border-indigo-500 select-none">
                 <CardHeader className="flex flex-row justify-between items-center border-b bg-slate-50/50">
                     <div>
                         <CardTitle className="text-xl">{test.title}</CardTitle>
@@ -311,7 +315,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 <CardContent className="p-6 md:p-8 min-h-[300px]">
                     <h2 className="text-lg md:text-xl font-medium mb-4 leading-relaxed">
                         <span className="text-sm font-bold text-slate-500 mr-2 uppercase tracking-wide">[{qType}]</span>
-                        {question.text}
+                        <RichText text={question.text} />
                     </h2>
                     {question.imageUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -341,7 +345,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                                             {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
                                         </div>
                                         <Label className="flex-1 cursor-pointer font-normal text-base pointer-events-none">
-                                            {opt}
+                                            <RichText text={opt} />
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             {img && <img src={img} alt="" className="mt-2 max-h-32 rounded" />}
                                         </Label>
@@ -361,7 +365,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                                     <div key={idx} className={`flex items-center space-x-3 p-4 rounded-lg border transition-all ${currentAnswer === idx ? "border-indigo-500 bg-indigo-50 shadow-sm" : "hover:bg-slate-50 hover:border-slate-300"}`}>
                                         <RadioGroupItem value={idx.toString()} id={`opt-${idx}`} />
                                         <Label htmlFor={`opt-${idx}`} className="flex-1 cursor-pointer font-normal text-base">
-                                            {opt}
+                                            <RichText text={opt} />
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             {img && <img src={img} alt="" className="mt-2 max-h-32 rounded" />}
                                         </Label>

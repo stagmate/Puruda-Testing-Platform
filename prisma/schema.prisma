@@ -218,3 +218,14 @@ model PerformanceReview {
   status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
   createdAt DateTime @default(now())
 }
+
+// Uploaded images (question diagrams, option images). Stored in the database
+// because serverless hosts like Vercel have no persistent disk.
+model Asset {
+  id         String   @id @default(cuid())
+  mimeType   String
+  size       Int
+  data       Bytes
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+}

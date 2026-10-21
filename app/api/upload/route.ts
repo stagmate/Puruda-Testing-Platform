@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server"
-import { mkdir, writeFile } from "fs/promises"
-import { randomUUID } from "crypto"
-import path from "path"
+import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
+import { sniffImageType } from "@/lib/image-type"
 
 const MAX_BYTES = 5 * 1024 * 1024 // 5 MB
-// Only plain image formats. SVG is excluded because it can carry scripts.
-const ALLOWED_TYPES: Record<string, string> = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/gif": "gif",
-    "image/webp": "webp",
-}
 
-// Note: files are written to public/uploads on the server's disk. On hosts with
-// ephemeral disks (e.g. Vercel) they will not persist; use object storage there.
+// Images are stored in the database and served from /api/assets/<id>, because
+// serverless hosts (e.g. Vercel) have a read-only, non-persistent disk.
 export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
@@ -26,20 +18,18 @@ export async function POST(req: Request) {
         if (!file || typeof file === "string") {
             return new NextResponse("No file uploaded", { status: 400 })
         }
-
-        const ext = ALLOWED_TYPES[file.type]
-        if (!ext) return new NextResponse("Only PNG, JPEG, GIF or WebP images are allowed", { status: 400 })
         if (file.size > MAX_BYTES) return new NextResponse("Image is too large (max 5 MB)", { status: 413 })
 
         const buffer = Buffer.from(await file.arrayBuffer())
+        const mimeType = sniffImageType(buffer)
+        if (!mimeType) return new NextResponse("Only PNG, JPEG, GIF or WebP images are allowed", { status: 400 })
 
-        // Server-generated name: never trust the client's filename (path traversal, odd characters).
-        const filename = `${Date.now()}-${randomUUID()}.${ext}`
-        const uploadDir = path.join(process.cwd(), "public", "uploads")
-        await mkdir(uploadDir, { recursive: true })
-        await writeFile(path.join(uploadDir, filename), buffer)
+        const asset = await db.asset.create({
+            data: { mimeType, size: buffer.length, data: buffer, uploadedBy: auth.user.id },
+            select: { id: true },
+        })
 
-        return NextResponse.json({ url: `/uploads/${filename}` })
+        return NextResponse.json({ url: `/api/assets/${asset.id}` })
     } catch (error) {
         console.error("Upload error:", error)
         return new NextResponse("Error uploading file", { status: 500 })
