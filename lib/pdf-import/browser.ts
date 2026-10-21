@@ -104,20 +104,30 @@ export async function extractQuestions(pages: PageImage[], onProgress?: (p: Impo
     for (let s = 1; s <= pages.length; s += FOCUS_PAGES) ranges.push([s, Math.min(pages.length, s + FOCUS_PAGES - 1)])
     let done = 0
     const failed: string[] = []
+    // Stops the other in-flight batches when one hits an error every batch would hit.
+    const stop = new AbortController()
+    const onOuterAbort = () => stop.abort()
+    signal?.addEventListener("abort", onOuterAbort)
     onProgress?.({ stage: "read", done, total: ranges.length })
-    const results = await pool(ranges, CONCURRENCY, async ([from, to]) => {
-        try {
-            return await extractBatch(pages, from, to, signal)
-        } catch (e) {
-            if (e instanceof FatalImportError || signal?.aborted) throw e
-            failed.push(e instanceof Error ? e.message : `Pages ${from}–${to} failed`)
-            return { questions: [], answers: [] } as Extraction
-        } finally {
-            onProgress?.({ stage: "read", done: ++done, total: ranges.length })
-        }
-    })
-    if (failed.length === ranges.length) throw new ImportError(failed[0])
-    return { questions: mergeExtractions(results), failed: failed.sort() }
+    try {
+        const results = await pool(ranges, CONCURRENCY, async ([from, to]) => {
+            if (stop.signal.aborted) return { questions: [], answers: [] } as Extraction
+            try {
+                return await extractBatch(pages, from, to, stop.signal)
+            } catch (e) {
+                if (e instanceof FatalImportError) { stop.abort(); throw e }
+                if (stop.signal.aborted) throw e
+                failed.push(e instanceof Error ? e.message : `Pages ${from}–${to} failed`)
+                return { questions: [], answers: [] } as Extraction
+            } finally {
+                if (!stop.signal.aborted) onProgress?.({ stage: "read", done: ++done, total: ranges.length })
+            }
+        })
+        if (failed.length === ranges.length) throw new ImportError(failed[0])
+        return { questions: mergeExtractions(results), failed: failed.sort() }
+    } finally {
+        signal?.removeEventListener("abort", onOuterAbort)
+    }
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
