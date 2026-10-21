@@ -99,7 +99,7 @@ export function CourseManagement() {
             <CardHeader><CardTitle>Academic Management</CardTitle></CardHeader>
             <CardContent>
                 <Tabs defaultValue="courses">
-                    <TabsList className="mb-4">
+                    <TabsList className="mb-4 max-w-full justify-start overflow-x-auto">
                         <TabsTrigger value="courses">Courses</TabsTrigger>
                         <TabsTrigger value="batches">Batches</TabsTrigger>
                         <TabsTrigger value="subjects">Subjects</TabsTrigger>
@@ -156,7 +156,7 @@ export function CourseManagement() {
 
                     {/* ASSIGNMENTS TAB */}
                     <TabsContent value="assignments" className="space-y-4">
-                        <div className="grid grid-cols-3 gap-4 border p-4 rounded-lg bg-slate-50">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border p-4 rounded-lg bg-slate-50">
                             <div className="space-y-1">
                                 <Label>Teacher</Label>
                                 <Select value={newAssignment.teacherId} onValueChange={v => setNewAssignment({ ...newAssignment, teacherId: v })}>
@@ -201,7 +201,7 @@ export function CourseManagement() {
 
                     {/* ENROLLMENTS TAB */}
                     <TabsContent value="enrollments" className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4 border p-4 rounded-lg bg-slate-50">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border p-4 rounded-lg bg-slate-50">
                             <div className="space-y-1">
                                 <Label>Student</Label>
                                 <Select value={newEnrollment.studentId} onValueChange={v => setNewEnrollment({ ...newEnrollment, studentId: v })}>

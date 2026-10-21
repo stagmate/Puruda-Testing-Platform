@@ -557,7 +557,7 @@ export function QuestionBankManagement() {
                 </div>
 
                 <Tabs defaultValue="repository">
-                    <TabsList className="mb-4">
+                    <TabsList className="mb-4 max-w-full justify-start overflow-x-auto">
                         <TabsTrigger value="repository">Repository ({questions.length})</TabsTrigger>
                         <TabsTrigger value="pdf-import">PDF Import (AI)</TabsTrigger>
                         <TabsTrigger value="single">Add Single</TabsTrigger>

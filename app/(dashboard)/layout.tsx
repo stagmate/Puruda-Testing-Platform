@@ -1,5 +1,6 @@
+import { Suspense } from "react"
 import { Sidebar } from "@/components/sidebar"
-import { LogoutButton } from "@/components/logout-button"
+import { MobileNav } from "@/components/mobile-nav"
 
 export default function DashboardLayout({
     children,
@@ -7,18 +8,18 @@ export default function DashboardLayout({
     children: React.ReactNode
 }) {
     return (
-        <div className="h-full relative">
-            <div className="hidden h-full md:flex md:w-72 md:flex-col md:fixed md:inset-y-0 z-[80] bg-gray-900">
-                <Sidebar />
+        <div className="relative h-full">
+            {/* Desktop: fixed sidebar */}
+            <div className="fixed inset-y-0 z-[80] hidden h-full bg-slate-900 md:flex md:w-72 md:flex-col">
+                <Suspense>
+                    <Sidebar />
+                </Suspense>
             </div>
-            <main className="md:pl-72 h-full bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
-                {/* Mobile Header could go here */}
-                {/* Navbar/TopBar */}
-                <div className="flex items-center justify-end p-4 md:hidden">
-                    {/* Mobile Sidebar Trigger would go here */}
-                    <span className="font-bold">Puruda</span>
-                </div>
-
+            <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 md:pl-72">
+                {/* Mobile: top bar with a slide-in menu */}
+                <Suspense>
+                    <MobileNav />
+                </Suspense>
                 {children}
             </main>
         </div>
