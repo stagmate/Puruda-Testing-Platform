@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/db"
 import { Prisma } from "@prisma/client"
+import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
-import { isDifficulty, isQuestionType } from "@/lib/question-enums"
+import { normalizeQuestion } from "@/lib/question-input"
+import { cleanContext } from "@/lib/question-context"
 
+const MAX_QUESTIONS = 500
+
+// Save many questions at once (CSV upload, PDF import). All-or-nothing: if any
+// row is invalid nothing is saved and the problems are listed.
 export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
@@ -11,55 +16,37 @@ export async function POST(req: Request) {
     try {
         const body = await req.json()
         const { questions } = body
-        const context = body.context || {}
+        const context = cleanContext(body.context)
 
         if (!Array.isArray(questions) || questions.length === 0) {
-            return new NextResponse("Invalid questions array", { status: 400 })
+            return new NextResponse("No questions to save", { status: 400 })
+        }
+        if (questions.length > MAX_QUESTIONS) {
+            return new NextResponse(`Too many questions at once (max ${MAX_QUESTIONS})`, { status: 400 })
         }
 
-        // Validate minimal fields
-        for (const q of questions) {
-            if (!q || !q.text || !q.correct) {
-                return new NextResponse("Invalid question format in CSV. Text and Correct Answer are required.", { status: 400 })
-            }
-            if (q.type && !isQuestionType(String(q.type).toUpperCase())) {
-                return new NextResponse(`Invalid question type "${q.type}". Use SINGLE, MULTIPLE or INTEGER.`, { status: 400 })
-            }
-            if (q.difficulty && !isDifficulty(String(q.difficulty).toUpperCase())) {
-                return new NextResponse(`Invalid difficulty "${q.difficulty}". Use BEGINNER, INTERMEDIATE or ADVANCED.`, { status: 400 })
-            }
-        }
-
-        // Bulk Insert
-        // Transform incoming simple CSV data to Prisma Schema compatible objects
-        const formattedQuestions = questions.map((q): Prisma.QuestionCreateManyInput => ({
-            text: q.text,
-            options: JSON.stringify([q.optionA || "", q.optionB || "", q.optionC || "", q.optionD || ""]), // Ensure 4 options exist even if empty
-            // Stored as given (text, letter or index); lib/grading.ts understands all of these.
-            correct: Array.isArray(q.correct) ? JSON.stringify(q.correct) : String(q.correct),
-            type: q.type ? String(q.type).toUpperCase() as Prisma.QuestionCreateManyInput["type"] : "SINGLE",
-            difficulty: q.difficulty ? String(q.difficulty).toUpperCase() as Prisma.QuestionCreateManyInput["difficulty"] : "INTERMEDIATE",
-
-            // Context from the UI selection
-            courseId: context.courseId || null,
-            subjectId: context.subjectId || null,
-            chapterId: context.chapterId || null,
-            subtopicId: context.subtopicId || null,
-
-            // AI/Extra Fields
-            solution: q.solution || null,
-            examTag: q.examTag || null,
-            hasDiagram: !!q.hasDiagram,
-        }))
-
-        // createMany is faster
-        const result = await db.question.createMany({
-            data: formattedQuestions
+        const rows: Prisma.QuestionCreateManyInput[] = []
+        const problems: string[] = []
+        questions.forEach((q: Record<string, unknown>, i: number) => {
+            // CSV rows use optionA..optionD; editor/PDF rows use an options array
+            const input = Array.isArray(q?.options) ? q : { ...q, options: [q?.optionA, q?.optionB, q?.optionC, q?.optionD] }
+            const { fields, error } = normalizeQuestion(input ?? {})
+            if (error || !fields) problems.push(`Question ${i + 1}: ${error}`)
+            else rows.push({ ...fields, ...context, examTag: typeof q.examTag === "string" ? q.examTag : null })
         })
 
-        return NextResponse.json({ success: true, count: result.count })
+        if (problems.length > 0) {
+            const shown = problems.slice(0, 10).join("\n")
+            const more = problems.length > 10 ? `\n…and ${problems.length - 10} more` : ""
+            return new NextResponse(`Nothing was saved. Fix these first:\n${shown}${more}`, { status: 400 })
+        }
 
+        const result = await db.question.createMany({ data: rows })
+        return NextResponse.json({ success: true, count: result.count })
     } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+            return new NextResponse("The selected course, subject, chapter or subtopic no longer exists", { status: 400 })
+        }
         console.error("Bulk Upload Error:", error)
         return new NextResponse("Internal Server Error during Bulk Upload", { status: 500 })
     }

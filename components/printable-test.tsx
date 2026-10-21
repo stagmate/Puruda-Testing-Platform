@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect } from "react";
+import { RichText } from "@/components/rich-text"
+import { correctOptionIndexes, formatCorrectAnswer } from "@/lib/grading"
 import { CheckCircle2 } from "lucide-react";
 
 interface PrintableTestProps {
@@ -41,21 +43,12 @@ export function PrintableTest({ test, mode }: PrintableTestProps) {
                 <div>
                     <h2 className="text-xl font-bold mb-4 text-center">Answer Key</h2>
                     <div className="grid grid-cols-4 gap-4 text-sm">
-                        {test.questions.map((q: any, i: number) => {
-                            // Determine correct answer display
-                            let correctAns = q.correct;
-                            // If it's single/MSQ, maybe show "Option A" etc.
-                            // Assuming q.correct holds the value or key.
-                            // For display simplicity, let's show what is stored.
-                            if (Array.isArray(correctAns)) correctAns = correctAns.join(", ");
-
-                            return (
-                                <div key={q.id} className="border p-2">
-                                    <span className="font-bold mr-2">Q{i + 1}.</span>
-                                    <span>{correctAns}</span>
-                                </div>
-                            );
-                        })}
+                        {test.questions.map((q: any, i: number) => (
+                            <div key={q.id} className="border p-2">
+                                <span className="font-bold mr-2">Q{i + 1}.</span>
+                                <span>{formatCorrectAnswer(q)}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             ) : (
@@ -73,22 +66,16 @@ export function PrintableTest({ test, mode }: PrintableTestProps) {
                         const options =
                             typeof q.options === "string" ? JSON.parse(q.options) : q.options || [];
 
-                        // Check correct answer for Teacher Mode
-                        const isCorrect = (opt: string) => {
-                            if (mode !== 'teacher') return false;
-                            if (q.type === 'MULTIPLE') {
-                                const corr = typeof q.correct === 'string' ? JSON.parse(q.correct) : q.correct;
-                                return Array.isArray(corr) && corr.includes(opt);
-                            }
-                            return q.correct === opt; // Exact match for SINGLE
-                        }
+                        // Teacher copy marks the correct option(s)
+                        const correctIdxs = mode === "teacher" && q.type !== "INTEGER" ? correctOptionIndexes(q) : []
+                        const optionImages = [q.optionAImageUrl, q.optionBImageUrl, q.optionCImageUrl, q.optionDImageUrl]
 
                         return (
                             <div key={q.id} className="break-inside-avoid">
                                 <div className="flex gap-2">
                                     <span className="font-bold">{i + 1}.</span>
                                     <div className="flex-1">
-                                        <p className="mb-2 font-medium">{q.text}</p>
+                                        <p className="mb-2 font-medium"><RichText text={q.text} /></p>
 
                                         {q.imageUrl && (
                                             <div className="my-2 p-2 border border-slate-200 inline-block">
@@ -108,15 +95,19 @@ export function PrintableTest({ test, mode }: PrintableTestProps) {
                                         ) : (
                                             <div className="grid grid-cols-2 gap-x-8 gap-y-2 mt-2 text-sm">
                                                 {options.map((opt: string, idx: number) => {
-                                                    const correct = isCorrect(opt);
+                                                    const correct = correctIdxs.includes(idx);
                                                     return (
                                                         <div key={idx} className={`flex items-start gap-2 ${correct ? 'font-bold text-black' : ''}`}>
                                                             <span className={`w-5 h-5 flex items-center justify-center border rounded-full text-xs ${correct ? 'border-2 border-black bg-slate-100' : 'border-slate-400'}`}>
                                                                 {String.fromCharCode(65 + idx)}
                                                             </span>
                                                             <span>
-                                                                {opt}
+                                                                <RichText text={opt} />
                                                                 {correct && <CheckCircle2 className="inline ml-1 w-3 h-3" />}
+                                                                {optionImages[idx] && (
+                                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                                    <img src={optionImages[idx]} alt={`Option ${String.fromCharCode(65 + idx)}`} className="mt-1 max-h-28 object-contain" />
+                                                                )}
                                                             </span>
                                                         </div>
                                                     )

@@ -1,33 +1,34 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/db"
 import { Prisma } from "@prisma/client"
+import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
 import { isDifficulty, isQuestionType } from "@/lib/question-enums"
+import { normalizeQuestion } from "@/lib/question-input"
+import { cleanContext } from "@/lib/question-context"
 
-// GET: Fetch questions with optional filters
+// GET: questions with optional filters, newest first
 export async function GET(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
     const { searchParams } = new URL(req.url)
-    const courseId = searchParams.get("courseId")
-    const batchId = searchParams.get("batchId")
-    const subjectId = searchParams.get("subjectId")
-    const chapterId = searchParams.get("chapterId")
-    const subtopicId = searchParams.get("subtopicId")
+    const ctx = cleanContext(Object.fromEntries(searchParams))
     const difficulty = searchParams.get("difficulty")
+    const type = searchParams.get("type")
+    const search = searchParams.get("search")?.trim()
 
     const where: Prisma.QuestionWhereInput = {}
-    if (courseId) where.courseId = courseId
-    if (batchId) where.batchId = batchId
-    if (subjectId) where.subjectId = subjectId
-    if (chapterId) where.chapterId = chapterId
-    if (subtopicId) where.subtopicId = subtopicId
+    if (ctx.courseId) where.courseId = ctx.courseId
+    if (ctx.batchId) where.batchId = ctx.batchId
+    if (ctx.subjectId) where.subjectId = ctx.subjectId
+    if (ctx.chapterId) where.chapterId = ctx.chapterId
+    if (ctx.subtopicId) where.subtopicId = ctx.subtopicId
     if (difficulty && isDifficulty(difficulty)) where.difficulty = difficulty
+    if (type && isQuestionType(type)) where.type = type
+    if (search) where.text = { contains: search, mode: "insensitive" }
 
     const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1)
     const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") || "50") || 50))
-    const skip = (page - 1) * limit
 
     const [questions, total] = await Promise.all([
         db.question.findMany({
@@ -37,77 +38,39 @@ export async function GET(req: Request) {
                 batch: { select: { name: true } },
                 subject: { select: { name: true } },
                 chapter: { select: { name: true } },
-                subtopic: { select: { name: true } }
+                subtopic: { select: { name: true } },
+                _count: { select: { tests: true } },
             },
-            orderBy: { createdAt: 'desc' },
-            skip,
-            take: limit
+            orderBy: { createdAt: "desc" },
+            skip: (page - 1) * limit,
+            take: limit,
         }),
-        db.question.count({ where })
+        db.question.count({ where }),
     ])
 
     return NextResponse.json({
         data: questions,
-        meta: {
-            total,
-            page,
-            limit,
-            totalPages: Math.ceil(total / limit)
-        }
+        meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) },
     })
 }
 
-// POST: Create a single question
+// POST: create one question
 export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
     try {
         const body = await req.json()
-        const { text, options, correct, courseId, batchId, subjectId, chapterId, subtopicId, difficulty, type, imageUrl, optionImages } = body
+        const { fields, error } = normalizeQuestion(body)
+        if (error || !fields) return new NextResponse(error, { status: 400 })
 
-        if (!text || !correct || (Array.isArray(correct) && correct.length === 0)) {
-            return new NextResponse("Missing fields", { status: 400 })
-        }
-        if (type !== undefined && !isQuestionType(type)) {
-            return new NextResponse("Invalid question type", { status: 400 })
-        }
-        if (difficulty !== undefined && difficulty !== "" && !isDifficulty(difficulty)) {
-            return new NextResponse("Invalid difficulty", { status: 400 })
-        }
-
-        // Validate options based on type
-        let validOptions = options;
-        if (type === "INTEGER") {
-            validOptions = []; // Integer questions don't need options
-        } else {
-            if (!Array.isArray(options) || options.filter((o: unknown) => String(o ?? "").trim()).length < 2) {
-                return new NextResponse("At least 2 options required", { status: 400 })
-            }
-        }
-
-        const question = await db.question.create({
-            data: {
-                text,
-                imageUrl: imageUrl || null,
-                options: JSON.stringify(validOptions),
-                optionAImageUrl: optionImages?.[0] || null,
-                optionBImageUrl: optionImages?.[1] || null,
-                optionCImageUrl: optionImages?.[2] || null,
-                optionDImageUrl: optionImages?.[3] || null,
-                correct: typeof correct === 'object' ? JSON.stringify(correct) : correct, // Handle array for MULTIPLE
-                courseId: courseId || null,
-                batchId: batchId || null,
-                subjectId: subjectId || null,
-                chapterId: chapterId || null,
-                subtopicId: subtopicId || null,
-                difficulty: difficulty || "INTERMEDIATE",
-                type: type || "SINGLE"
-            }
-        })
+        const question = await db.question.create({ data: { ...fields, ...cleanContext(body) } })
         return NextResponse.json(question)
     } catch (error) {
-        console.error(error)
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+            return new NextResponse("The selected course, subject, chapter or subtopic no longer exists", { status: 400 })
+        }
+        console.error("[QUESTIONS_POST]", error)
         return new NextResponse("Error creating question", { status: 500 })
     }
 }

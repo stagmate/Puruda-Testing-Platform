@@ -185,7 +185,7 @@ export function TestCreation() {
             subjectId: manualFilterSubject
         }
 
-        const res = await fetch("/api/admin/questions", { method: "POST", body: JSON.stringify(payload) })
+        const res = await fetch("/api/admin/questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
         if (res.ok) {
             const savedQ = await res.json()
             setManualSelectedIds(prev => [...prev, savedQ.id]) // Auto-select
@@ -193,6 +193,8 @@ export function TestCreation() {
             setQImages({})
             fetchQuestions() // Refresh list
             alert("Question Added & Selected!")
+        } else {
+            alert(`Couldn't add the question: ${await res.text()}`)
         }
         setIsAddingQ(false)
     }
