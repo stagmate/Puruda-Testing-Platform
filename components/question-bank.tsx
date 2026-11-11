@@ -129,7 +129,7 @@ export function QuestionBankManagement() {
                         <TabsTrigger value="repository"><Library className="mr-1.5 h-4 w-4" />Questions</TabsTrigger>
                         <TabsTrigger value="add"><PencilLine className="mr-1.5 h-4 w-4" />Add</TabsTrigger>
                         <TabsTrigger value="pdf"><FileUp className="mr-1.5 h-4 w-4" />Import PDF</TabsTrigger>
-                        <TabsTrigger value="csv"><Table2 className="mr-1.5 h-4 w-4" />CSV</TabsTrigger>
+                        <TabsTrigger value="csv"><Table2 className="mr-1.5 h-4 w-4" />CSV / Excel</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="repository"><Repository filters={filters} refreshKey={refreshKey} /></TabsContent>
