@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { getSessionUser } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 
 // POST: Create a review (Teacher only)
 export async function POST(req: Request) {
     try {
-        const session = await getServerSession(authOptions)
-        const user = session?.user as any
+        const user = await getSessionUser()
 
         if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
         if (user.role !== "TEACHER" && user.role !== "ADMIN") {
@@ -55,8 +53,7 @@ export async function POST(req: Request) {
 // - Student -> Their own APPROVED reviews
 export async function GET(req: Request) {
     try {
-        const session = await getServerSession(authOptions)
-        const user = session?.user as any
+        const user = await getSessionUser()
         if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
         const { searchParams } = new URL(req.url)
@@ -101,8 +98,7 @@ export async function GET(req: Request) {
 // PATCH: Approve/Reject (Admin only)
 export async function PATCH(req: Request) {
     try {
-        const session = await getServerSession(authOptions)
-        const user = session?.user as any
+        const user = await getSessionUser()
 
         if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
         if (user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 })

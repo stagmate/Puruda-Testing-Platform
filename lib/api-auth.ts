@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth"
 import { NextResponse } from "next/server"
 import { authOptions } from "@/lib/auth"
+import { checkSession } from "@/lib/session-store"
 
 export const ROLES = ["ADMIN", "TEACHER", "STUDENT"] as const
 export type Role = (typeof ROLES)[number]
@@ -16,11 +17,17 @@ export function isRole(value: unknown): value is Role {
     return typeof value === "string" && (ROLES as readonly string[]).includes(value)
 }
 
+/**
+ * The signed-in user, or null. Besides the login cookie, the server-side session
+ * record must still be valid (not signed out, closed, idle or expired).
+ */
 export async function getSessionUser(): Promise<SessionUser | null> {
     const session = await getServerSession(authOptions)
-    const user = session?.user as Partial<SessionUser> | undefined
+    const user = session?.user as (Partial<SessionUser> & { sid?: string }) | undefined
     if (!user?.id || !isRole(user.role)) return null
-    return user as SessionUser
+    const check = await checkSession(user.sid, user.id)
+    if (!check.ok) return null
+    return { id: user.id, email: user.email, name: user.name, role: user.role }
 }
 
 type AuthResult =

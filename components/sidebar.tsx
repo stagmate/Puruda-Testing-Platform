@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
-import { signOut } from "next-auth/react"
+import { signOutTo } from "@/components/session-guard"
 import { cn } from "@/lib/utils"
 import { ADMIN_SECTIONS, adminSectionHref } from "@/lib/admin-sections"
 import { LayoutDashboard, BookOpen, FileQuestion, PenTool, LogOut, type LucideIcon } from "lucide-react"
@@ -83,7 +83,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 </div>
                 <button
                     type="button"
-                    onClick={() => signOut({ callbackUrl: "/" })}
+                    onClick={() => signOutTo("signed_out")}
                     className="flex w-full items-center rounded-lg p-3 text-sm font-medium text-zinc-400 transition hover:bg-white/10 hover:text-white"
                 >
                     <LogOut className="mr-3 h-5 w-5 text-red-400" />

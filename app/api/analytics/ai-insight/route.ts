@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { getSessionUser } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { getRotatedKey } from "@/lib/gemini-keys"
 
 export async function POST(req: Request) {
     try {
-        const session = await getServerSession(authOptions)
-        if (!session || !session.user) return new NextResponse("Unauthorized", { status: 401 })
+        const sessionUser = await getSessionUser()
+        if (!sessionUser) return new NextResponse("Unauthorized", { status: 401 })
+        const session = { user: sessionUser }
 
         // Optional: Admin/Teacher can request for a specific student
         const { userId } = await req.json().catch(() => ({}))

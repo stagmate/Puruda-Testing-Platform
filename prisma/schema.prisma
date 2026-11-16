@@ -19,6 +19,7 @@ model User {
   batches   Batch[]  @relation("StudentBatches")
   results   TestResult[]
   attempts  TestAttempt[]
+  sessions  UserSession[]
 
   // Teacher Relations
   assignments TeacherAssignment[]
@@ -228,4 +229,35 @@ model Asset {
   data       Bytes
   uploadedBy String?
   createdAt  DateTime @default(now())
+}
+
+// One row per login. The browser's login cookie only identifies the row; whether
+// the session is still valid (not closed, idle, expired or signed out) is decided
+// here on every request, so logout and timeouts take effect immediately.
+model UserSession {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now()) // last heartbeat from an open tab
+  lastActiveAt  DateTime  @default(now()) // last real user activity (click, key, scroll)
+  closingAt     DateTime? // a tab reported it was closing
+  revokedAt     DateTime?
+  revokedReason String?
+  ipAddress     String?
+  userAgent     String?
+
+  @@index([userId])
+}
+
+// Recent login attempts, for locking out repeated password guessing.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String?
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
 }
