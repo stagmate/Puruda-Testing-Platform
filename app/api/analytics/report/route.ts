@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { getSessionUser } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 
 export async function POST(req: Request) {
     try {
-        const session = await getServerSession(authOptions)
-        const currentUser = session?.user as any
+        const currentUser = await getSessionUser()
 
         if (!currentUser) return new NextResponse("Unauthorized", { status: 401 })
 

@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { signIn } from "next-auth/react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+import { END_MESSAGES, type EndReason } from "@/lib/session-policy"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,7 +11,17 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Loader2 } from "lucide-react"
 
 export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginForm />
+        </Suspense>
+    )
+}
+
+function LoginForm() {
     const router = useRouter()
+    const reason = useSearchParams().get("reason")
+    const notice = reason && reason in END_MESSAGES ? END_MESSAGES[reason as EndReason] : ""
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")
@@ -30,8 +41,10 @@ export default function LoginPage() {
             })
 
             if (res?.error) {
-                console.error("Login Failed:", res.error)
-                setError("Login failed. Check console for details or verify credentials.")
+                // "CredentialsSignin" = wrong email or password; anything else is our own
+                // message (e.g. the lockout after too many attempts)
+                setError(res.error === "CredentialsSignin" ? "Incorrect email or password." : res.error)
+                setPassword("")
                 setLoading(false)
                 return
             }
@@ -56,15 +69,8 @@ export default function LoginPage() {
             const role = session.user.role
 
             // 3. Redirect based on role
-            if (role === "ADMIN") {
-                router.push("/admin")
-            } else if (role === "TEACHER") {
-                router.push("/teacher")
-            } else if (role === "STUDENT") {
-                router.push("/student")
-            } else {
-                router.push("/") // Fallback
-            }
+            const home = role === "ADMIN" ? "/admin" : role === "TEACHER" ? "/teacher" : role === "STUDENT" ? "/student" : "/"
+            router.replace(home)
 
             router.refresh()
 
@@ -84,11 +90,17 @@ export default function LoginPage() {
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="grid gap-4">
+                        {notice && !error && (
+                            <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+                                {notice}
+                            </div>
+                        )}
                         <div className="grid gap-2">
                             <Label htmlFor="email">Email</Label>
                             <Input
                                 id="email"
                                 type="email"
+                                autoComplete="username"
                                 placeholder="name@example.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
@@ -100,13 +112,14 @@ export default function LoginPage() {
                             <Input
                                 id="password"
                                 type="password"
+                                autoComplete="current-password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
                             />
                         </div>
                         {error && (
-                            <div className="p-3 bg-red-100 border border-red-200 text-red-600 rounded text-sm">
+                            <div className="p-3 bg-red-100 border border-red-200 text-red-600 rounded text-sm" role="alert">
                                 {error}
                             </div>
                         )}

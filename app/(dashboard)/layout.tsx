@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { MobileNav } from "@/components/mobile-nav"
+import { SessionGate } from "@/components/session-guard"
 
 export default function DashboardLayout({
     children,
@@ -20,7 +21,8 @@ export default function DashboardLayout({
                 <Suspense>
                     <MobileNav />
                 </Suspense>
-                {children}
+                {/* Page content appears only once the session is confirmed server-side */}
+                <SessionGate>{children}</SessionGate>
             </main>
         </div>
     )
