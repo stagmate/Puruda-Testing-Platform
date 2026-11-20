@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { RichText } from "@/components/rich-text"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Label } from "@/components/ui/label"
-import { Loader2, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock } from "lucide-react"
+import { Card, CardContent, CardTitle } from "@/components/ui/card"
+import { Loader2, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock, Check, ChevronLeft, ChevronRight, LayoutGrid, LogOut, X, Eraser } from "lucide-react"
+import { questionStatus, summarize, type QuestionStatus } from "@/lib/test-progress"
+import { cn } from "@/lib/utils"
 
 interface TestInterfaceProps {
     testId: string
@@ -64,6 +64,11 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const [loadError, setLoadError] = useState("")
     const [submitError, setSubmitError] = useState("")
     const [timeLeft, setTimeLeft] = useState<number | null>(null)
+    // Questions the student has opened (the first one is open on start).
+    const [visited, setVisited] = useState<Set<number>>(() => new Set([0]))
+    const [paletteOpen, setPaletteOpen] = useState(false)
+    const [confirmSubmit, setConfirmSubmit] = useState(false)
+    const [exitPrompt, setExitPrompt] = useState(false)
 
     // Anti-cheat state
     const [warnings, setWarnings] = useState(0)
@@ -202,6 +207,52 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
         }
     }, [warnings, handleSubmit])
 
+    // Leaving mid-test: the browser Back button asks first (a history entry is
+    // pushed so Back lands here instead of leaving), and reload/close warns too.
+    const leavingRef = useRef(false)
+    useEffect(() => {
+        if (!test || completed) return
+        window.history.pushState({ testGuard: true }, "")
+        const onPopState = () => {
+            if (leavingRef.current) return
+            window.history.pushState({ testGuard: true }, "")
+            setExitPrompt(true)
+        }
+        const onBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (leavingRef.current || completedRef.current) return
+            e.preventDefault()
+            e.returnValue = ""
+        }
+        window.addEventListener("popstate", onPopState)
+        window.addEventListener("beforeunload", onBeforeUnload)
+        return () => {
+            window.removeEventListener("popstate", onPopState)
+            window.removeEventListener("beforeunload", onBeforeUnload)
+        }
+    }, [test, completed])
+
+    const exitTest = () => {
+        leavingRef.current = true
+        setExitPrompt(false)
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => { })
+        onComplete?.()
+    }
+
+    const goTo = (i: number) => {
+        if (!test) return
+        const next = Math.max(0, Math.min(test.questions.length - 1, i))
+        setCurrentQuestion(next)
+        setVisited(v => (v.has(next) ? v : new Set(v).add(next)))
+        setPaletteOpen(false)
+    }
+
+    const clearAnswer = () => {
+        if (!test) return
+        const next = { ...answersRef.current }
+        delete next[test.questions[currentQuestion].id]
+        updateAnswers(next)
+    }
+
     const handleAnswer = (val: Answer) => {
         if (!test) return
         const qId = test.questions[currentQuestion].id
@@ -263,12 +314,45 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const qType = question.type || "SINGLE"
     const options = Array.isArray(question.options) ? question.options : []
     const lowTime = timeLeft !== null && timeLeft < 5 * 60 * 1000
+    const progress = summarize(test.questions.map(q => q.id), answers, visited)
+    const isLast = currentQuestion === test.questions.length - 1
 
-    // The container scrolls inside fullscreen too: a fullscreen element doesn't scroll by
-    // default, which hid Next/Submit below the fold on tall questions. Auto margins centre
-    // short content without clipping long content (justify-center would).
+    // Palette groups: consecutive questions of the same subject (the paper's parts).
+    const groups: { subject: string | null; items: number[] }[] = []
+    test.questions.forEach((q, i) => {
+        const last = groups[groups.length - 1]
+        if (last && last.subject === (q.subject ?? null)) last.items.push(i)
+        else groups.push({ subject: q.subject ?? null, items: [i] })
+    })
+
+    const palette = (
+        <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <Legend status="answered" label="Answered" count={progress.answered} />
+                <Legend status="not-answered" label="Not answered" count={progress.notAnswered} />
+                <Legend status="not-visited" label="Not visited" count={progress.notVisited} />
+            </div>
+            {groups.map((g, gi) => (
+                <div key={gi}>
+                    {g.subject && <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.subject}</p>}
+                    <div className="grid grid-cols-5 gap-1.5">
+                        {g.items.map(i => (
+                            <PaletteButton
+                                key={i}
+                                number={i + 1}
+                                status={questionStatus(answers[test.questions[i].id], visited.has(i))}
+                                current={i === currentQuestion}
+                                onClick={() => goTo(i)}
+                            />
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+    )
+
     return (
-        <div ref={containerRef} className="bg-background min-h-screen h-full overflow-y-auto flex flex-col items-center p-4">
+        <div ref={containerRef} className="fixed inset-0 z-40 flex flex-col bg-slate-100 select-none">
             {/* Fullscreen gate (skipped on devices that can't go fullscreen, e.g. iPhone) */}
             {fullscreenSupported && !isFullscreen && (
                 <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white p-6 text-center backdrop-blur-sm">
@@ -284,124 +368,234 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 </div>
             )}
 
-            <div className="mt-auto w-full max-w-3xl mb-4 flex flex-wrap gap-2 justify-between items-center text-sm font-medium">
-                <div className="flex items-center gap-2 text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-100">
-                    <Eye className="h-4 w-4 animate-pulse" />
-                    AI Proctoring Active
+            {/* Top bar */}
+            <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-white px-3 py-2 sm:px-5">
+                <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setPaletteOpen(true)} aria-label="Show question list">
+                    <LayoutGrid className="mr-1.5 h-4 w-4" />{currentQuestion + 1}/{test.questions.length}
+                </Button>
+                <div className="order-first min-w-0 basis-full sm:order-none sm:basis-0 sm:flex-1">
+                    <h1 className="truncate font-semibold text-slate-900">{test.title}</h1>
+                    <p className="hidden text-xs text-slate-500 sm:flex sm:items-center sm:gap-1.5">
+                        <Eye className="h-3.5 w-3.5 text-red-500" />Proctoring active
+                    </p>
+                </div>
+                <div className={cn("ml-auto flex items-center gap-1.5 text-sm sm:ml-0", warnings > 0 ? "font-bold text-red-600" : "text-slate-500")}>
+                    <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Warnings</span> {warnings}/{MAX_WARNINGS}
                 </div>
                 {timeLeft !== null && (
-                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full border tabular-nums ${lowTime ? "text-red-600 border-red-200 bg-red-50 font-bold" : "text-slate-700 border-slate-200"}`}>
-                        <Clock className="h-4 w-4" />
-                        {formatTime(timeLeft)}
+                    <div className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm tabular-nums", lowTime ? "border-red-200 bg-red-50 font-bold text-red-600" : "border-slate-200 text-slate-700")}>
+                        <Clock className="h-4 w-4" />{formatTime(timeLeft)}
                     </div>
                 )}
-                <div className={`flex items-center gap-2 ${warnings > 0 ? "text-red-500 font-bold" : "text-slate-500"}`}>
-                    <AlertTriangle className="h-4 w-4" />
-                    Warnings: {warnings}/{MAX_WARNINGS}
-                </div>
+                <Button
+                    onClick={() => setConfirmSubmit(true)}
+                    disabled={!progress.canSubmit || submitting}
+                    className="bg-green-600 hover:bg-green-700"
+                    title={progress.canSubmit ? "Submit the test" : `Open every question to submit (${progress.notVisited} not visited yet)`}
+                >
+                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Submit
+                </Button>
+            </header>
+
+            <div className="flex min-h-0 flex-1">
+                {/* Question palette: left column on large screens, a drawer on small ones */}
+                <aside className="hidden w-72 shrink-0 overflow-y-auto border-r bg-white p-4 lg:block" aria-label="Questions">
+                    {palette}
+                </aside>
+                {paletteOpen && (
+                    <div className="fixed inset-0 z-[45] flex lg:hidden">
+                        <div className="w-[min(20rem,85vw)] overflow-y-auto bg-white p-4 shadow-xl" aria-label="Questions">
+                            <div className="mb-3 flex items-center justify-between">
+                                <p className="font-semibold">Questions</p>
+                                <Button variant="ghost" size="icon" onClick={() => setPaletteOpen(false)} aria-label="Close question list"><X className="h-4 w-4" /></Button>
+                            </div>
+                            {palette}
+                        </div>
+                        <button type="button" className="flex-1 bg-black/40" aria-label="Close question list" onClick={() => setPaletteOpen(false)} />
+                    </div>
+                )}
+
+                {/* Question */}
+                <main className="flex min-w-0 flex-1 flex-col">
+                    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
+                        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-slate-900">Question {currentQuestion + 1} of {test.questions.length}</span>
+                            {question.subject && <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{question.subject}</span>}
+                            <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
+                                {qType === "MULTIPLE" ? "One or more correct" : qType === "INTEGER" ? "Numerical answer" : "Single correct"}
+                            </span>
+                        </div>
+
+                        <div className="rounded-xl border bg-white p-5 shadow-sm sm:p-7">
+                            <div className="mb-5 whitespace-pre-line text-base leading-relaxed text-slate-900 sm:text-lg">
+                                <RichText text={question.text} />
+                            </div>
+                            {question.imageUrl && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={question.imageUrl} alt="Question diagram" className="mb-6 h-auto max-h-[60vh] w-auto max-w-full rounded border bg-white object-contain" />
+                            )}
+
+                            {qType === "INTEGER" ? (
+                                <label className="block space-y-2">
+                                    <span className="text-sm text-slate-600">Enter your numerical answer</span>
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        className="flex h-14 w-full rounded-lg border-2 border-slate-300 bg-background px-4 text-xl focus-visible:border-indigo-500 focus-visible:outline-none"
+                                        value={typeof currentAnswer === "string" ? currentAnswer : ""}
+                                        onChange={e => handleAnswer(e.target.value)}
+                                        placeholder="e.g. 42 or 2.5"
+                                    />
+                                </label>
+                            ) : (
+                                <div className="space-y-3" role={qType === "MULTIPLE" ? "group" : "radiogroup"} aria-label="Options">
+                                    {options.map((opt, idx) => {
+                                        const selected = qType === "MULTIPLE"
+                                            ? Array.isArray(currentAnswer) && currentAnswer.includes(idx)
+                                            : currentAnswer === idx
+                                        const img = optionImage(question, idx)
+                                        return (
+                                            // The whole row is the control, edge to edge.
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                role={qType === "MULTIPLE" ? "checkbox" : "radio"}
+                                                aria-checked={selected}
+                                                onClick={() => (qType === "MULTIPLE" ? handleCheckboxAnswer(idx) : handleAnswer(idx))}
+                                                className={cn(
+                                                    "flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
+                                                    selected ? "border-indigo-600 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
+                                                )}
+                                            >
+                                                <span className={cn(
+                                                    "flex h-7 w-7 shrink-0 items-center justify-center text-sm font-bold",
+                                                    qType === "MULTIPLE" ? "rounded-md" : "rounded-full",
+                                                    selected ? "bg-indigo-600 text-white" : "border-2 border-slate-300 text-slate-600"
+                                                )}>
+                                                    {selected && qType === "MULTIPLE" ? <Check className="h-4 w-4" /> : String.fromCharCode(65 + idx)}
+                                                </span>
+                                                <span className="min-w-0 flex-1 pt-0.5 text-base text-slate-900">
+                                                    <RichText text={opt} />
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    {img && <img src={img} alt="" className="mt-2 max-h-40 rounded" />}
+                                                </span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        {submitError && <p className="mt-4 text-sm text-red-600">{submitError}</p>}
+                        {!progress.canSubmit && isLast && (
+                            <p className="mt-4 text-sm text-amber-700">
+                                Open every question before submitting: {progress.notVisited} not visited yet. Use the question list to find them.
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Navigation */}
+                    <footer className="flex items-center gap-2 border-t bg-white px-3 py-3 sm:px-8">
+                        <Button variant="outline" onClick={() => goTo(currentQuestion - 1)} disabled={currentQuestion === 0}>
+                            <ChevronLeft className="mr-1 h-4 w-4" />Previous
+                        </Button>
+                        <Button variant="ghost" onClick={clearAnswer} disabled={progress.answered === 0 || currentAnswer === undefined}>
+                            <Eraser className="mr-1.5 h-4 w-4" /><span className="hidden sm:inline">Clear response</span><span className="sm:hidden">Clear</span>
+                        </Button>
+                        <div className="flex-1" />
+                        {isLast ? (
+                            <Button onClick={() => setConfirmSubmit(true)} disabled={!progress.canSubmit || submitting} className="bg-green-600 hover:bg-green-700">
+                                Submit test
+                            </Button>
+                        ) : (
+                            <Button onClick={() => goTo(currentQuestion + 1)}>
+                                Next<ChevronRight className="ml-1 h-4 w-4" />
+                            </Button>
+                        )}
+                    </footer>
+                </main>
             </div>
 
-            <Card className="mb-auto w-full max-w-3xl mx-auto shadow-2xl border-t-4 border-indigo-500 select-none">
-                <CardHeader className="flex flex-row justify-between items-center border-b bg-slate-50/50">
-                    <div>
-                        <CardTitle className="text-xl">{test.title}</CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                            Question {currentQuestion + 1} of {test.questions.length}
-                            {question.subject && <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">{question.subject}</span>}
-                        </p>
-                    </div>
-                    {/* Simulated Camera Feed Placeholder (Optional) */}
-                    <div className="hidden md:block h-16 w-24 bg-black rounded overflow-hidden relative border border-slate-300">
-                        <div className="absolute top-1 left-1 h-2 w-2 bg-red-500 rounded-full animate-pulse"></div>
-                        <div className="flex items-center justify-center h-full text-[10px] text-slate-500">USER CAMERA</div>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-6 md:p-8 min-h-[300px]">
-                    <h2 className="text-lg md:text-xl font-medium mb-4 leading-relaxed">
-                        <span className="text-sm font-bold text-slate-500 mr-2 uppercase tracking-wide">[{qType}]</span>
-                        <RichText text={question.text} />
-                    </h2>
-                    {question.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={question.imageUrl} alt="Question diagram" className="mb-8 h-auto max-h-[75vh] w-auto max-w-full rounded border bg-white object-contain" />
-                    )}
-
-                    {qType === "INTEGER" ? (
-                        <div className="space-y-4">
-                            <Label className="text-base text-muted-foreground">Enter your numerical answer:</Label>
-                            <input
-                                type="text"
-                                inputMode="decimal"
-                                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-xl ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                value={typeof currentAnswer === "string" ? currentAnswer : ""}
-                                onChange={(e) => handleAnswer(e.target.value)}
-                                placeholder="e.g. 42"
-                            />
-                        </div>
-                    ) : qType === "MULTIPLE" ? (
-                        <div className="space-y-4">
-                            {options.map((opt, idx) => {
-                                const isSelected = Array.isArray(currentAnswer) && currentAnswer.includes(idx)
-                                const img = optionImage(question, idx)
-                                return (
-                                    <div key={idx} onClick={() => handleCheckboxAnswer(idx)} className={`flex items-center space-x-3 p-4 rounded-lg border transition-all cursor-pointer ${isSelected ? "border-indigo-500 bg-indigo-50 shadow-sm" : "hover:bg-slate-50 hover:border-slate-300"}`}>
-                                        <div className={`h-4 w-4 rounded border flex items-center justify-center ${isSelected ? "bg-indigo-600 border-indigo-600" : "border-slate-300"}`}>
-                                            {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
-                                        </div>
-                                        <Label className="flex-1 cursor-pointer font-normal text-base pointer-events-none">
-                                            <RichText text={opt} />
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            {img && <img src={img} alt="" className="mt-2 max-h-32 rounded" />}
-                                        </Label>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    ) : (
-                        <RadioGroup
-                            value={typeof currentAnswer === "number" ? currentAnswer.toString() : ""}
-                            onValueChange={(val) => handleAnswer(parseInt(val))}
-                            className="space-y-4"
-                        >
-                            {options.map((opt, idx) => {
-                                const img = optionImage(question, idx)
-                                return (
-                                    <div key={idx} className={`flex items-center space-x-3 p-4 rounded-lg border transition-all ${currentAnswer === idx ? "border-indigo-500 bg-indigo-50 shadow-sm" : "hover:bg-slate-50 hover:border-slate-300"}`}>
-                                        <RadioGroupItem value={idx.toString()} id={`opt-${idx}`} />
-                                        <Label htmlFor={`opt-${idx}`} className="flex-1 cursor-pointer font-normal text-base">
-                                            <RichText text={opt} />
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            {img && <img src={img} alt="" className="mt-2 max-h-32 rounded" />}
-                                        </Label>
-                                    </div>
-                                )
-                            })}
-                        </RadioGroup>
-                    )}
-
-                    {submitError && <p className="mt-6 text-sm text-red-600">{submitError}</p>}
-                </CardContent>
-                <CardFooter className="flex justify-between bg-slate-50 p-6 border-t">
-                    <Button
-                        variant="outline"
-                        onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
-                        disabled={currentQuestion === 0}
-                    >
-                        Previous
-                    </Button>
-
-                    {currentQuestion < test.questions.length - 1 ? (
-                        <Button onClick={() => setCurrentQuestion(prev => prev + 1)}>
-                            Next
+            {/* Prompts are drawn inside the test so they stay visible in fullscreen. */}
+            {confirmSubmit && (
+                <Prompt
+                    title="Submit the test?"
+                    onClose={() => setConfirmSubmit(false)}
+                    actions={<>
+                        <Button variant="outline" onClick={() => setConfirmSubmit(false)}>Keep working</Button>
+                        <Button className="bg-green-600 hover:bg-green-700" disabled={submitting} onClick={() => { setConfirmSubmit(false); handleSubmit() }}>
+                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Submit
                         </Button>
-                    ) : (
-                        <Button onClick={() => handleSubmit()} disabled={submitting} className="bg-green-600 hover:bg-green-700">
-                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Submit Test
+                    </>}
+                >
+                    <p>You answered <b>{progress.answered}</b> of {progress.total} questions{progress.notAnswered ? <>; <b>{progress.notAnswered}</b> unanswered</> : ""}.</p>
+                    <p>You can&apos;t change your answers after submitting.</p>
+                </Prompt>
+            )}
+            {exitPrompt && (
+                <Prompt
+                    title="Exit the test?"
+                    tone="danger"
+                    onClose={() => setExitPrompt(false)}
+                    actions={<>
+                        <Button onClick={() => setExitPrompt(false)}>Stay in the test</Button>
+                        <Button variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" onClick={exitTest}>
+                            <LogOut className="mr-1.5 h-4 w-4" />Exit test
                         </Button>
-                    )}
-                </CardFooter>
-            </Card>
+                    </>}
+                >
+                    <p>You are leaving the test. Your answers have <b>not</b> been submitted and will be lost.</p>
+                    <p>The timer keeps running while you are away.</p>
+                </Prompt>
+            )}
+        </div>
+    )
+}
+
+const STATUS_STYLE: Record<QuestionStatus, string> = {
+    answered: "border-green-600 bg-green-600 text-white",
+    "not-answered": "border-red-400 bg-red-50 text-red-700",
+    "not-visited": "border-slate-300 bg-white text-slate-600",
+}
+
+function PaletteButton({ number, status, current, onClick }: { number: number; status: QuestionStatus; current: boolean; onClick: () => void }) {
+    const label = { answered: "answered", "not-answered": "not answered", "not-visited": "not visited" }[status]
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            aria-label={`Question ${number}, ${label}${current ? ", current" : ""}`}
+            aria-current={current ? "step" : undefined}
+            className={cn(
+                "h-9 rounded-md border-2 text-sm font-semibold tabular-nums transition-colors",
+                STATUS_STYLE[status],
+                current && "ring-2 ring-indigo-600 ring-offset-2"
+            )}
+        >
+            {number}
+        </button>
+    )
+}
+
+function Legend({ status, label, count }: { status: QuestionStatus; label: string; count: number }) {
+    return (
+        <div className="flex flex-col items-center gap-1">
+            <span className={cn("flex h-7 w-7 items-center justify-center rounded-md border-2 text-xs font-semibold", STATUS_STYLE[status])}>{count}</span>
+            <span className="leading-tight text-slate-600">{label}</span>
+        </div>
+    )
+}
+
+function Prompt({ title, children, actions, onClose, tone }: { title: string; children: React.ReactNode; actions: React.ReactNode; onClose: () => void; tone?: "danger" }) {
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" role="alertdialog" aria-modal="true" aria-label={title} onClick={onClose}>
+            <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <h2 className={cn("flex items-center gap-2 text-lg font-semibold", tone === "danger" && "text-red-700")}>
+                    {tone === "danger" && <AlertTriangle className="h-5 w-5" />}{title}
+                </h2>
+                <div className="space-y-2 text-sm text-slate-700">{children}</div>
+                <div className="flex flex-wrap justify-end gap-2">{actions}</div>
+            </div>
         </div>
     )
 }
