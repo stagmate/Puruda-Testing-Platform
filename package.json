@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma db push --skip-generate && next build",
+    "build": "prisma db push --skip-generate && (tsx scripts/create-mock-tests.ts || true) && next build",
     "build:app": "next build",
     "start": "next start",
     "postinstall": "prisma generate",
