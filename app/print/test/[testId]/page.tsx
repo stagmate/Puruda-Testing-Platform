@@ -2,6 +2,7 @@ import { PrintableTest } from "@/components/printable-test"
 import { db } from "@/lib/db"
 import { notFound, redirect } from "next/navigation"
 import { getSessionUser } from "@/lib/api-auth"
+import { orderTestQuestions } from "@/lib/test-order"
 
 interface PageProps {
     params: Promise<{ testId: string }>
@@ -30,7 +31,7 @@ export default async function PrintTestPage(props: PageProps) {
 
     return (
         <div className="min-h-screen bg-white text-black">
-            <PrintableTest test={test} mode={mode} />
+            <PrintableTest test={{ ...test, questions: orderTestQuestions(test.questions, test.questionOrder) }} mode={mode} />
         </div>
     )
 }

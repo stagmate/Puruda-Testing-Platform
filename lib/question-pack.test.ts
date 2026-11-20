@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readPack, toQuestionInput, dataUrlBytes, PACK_FORMAT } from "./question-pack"
+import { readPack, toQuestionInput, dataUrlBytes, matchExisting, PACK_FORMAT } from "./question-pack"
 import { normalizeQuestion } from "./question-input"
 
 const PNG = "data:image/png;base64,iVBORw0KGgo="
@@ -53,5 +53,30 @@ describe("dataUrlBytes", () => {
     it("computes the decoded size", () => {
         expect(dataUrlBytes("data:image/png;base64,AAAA")).toBe(3)
         expect(dataUrlBytes("data:image/png;base64,AAA=")).toBe(2)
+    })
+})
+
+describe("pack tests", () => {
+    it("reads tests and checks they point at a paper", () => {
+        const base = pack([mcq, { ...mcq, paper: "JEE Advanced" }])
+        const ok = readPack({ ...base, tests: [{ title: "Main", paper: "JEE Main", duration: 180 }] })
+        expect(ok.problems).toEqual([])
+        expect(ok.tests).toEqual([{ title: "Main", paper: "JEE Main", duration: 180 }])
+        const bad = readPack({ ...base, tests: [{ title: "X", paper: "Nope", duration: 180 }, { title: "Y", paper: "JEE Main", duration: 0 }, { paper: "JEE Main", duration: 60 }] })
+        expect(bad.problems).toHaveLength(3)
+    })
+})
+
+describe("matchExisting", () => {
+    it("reuses identical questions once each", () => {
+        const { questions } = readPack(pack([
+            { ...mcq, text: "Q one" }, { ...mcq, text: "Q two" }, { ...mcq, text: "Q one" }, { ...mcq, text: "" },
+        ]))
+        const existing = [
+            { id: "e1", type: "SINGLE", text: "Q one", examTag: "JEE Main" },
+            { id: "e2", type: "SINGLE", text: "Q two ", examTag: "JEE Main" },
+            { id: "e3", type: "SINGLE", text: "Q two", examTag: "Other paper" },
+        ]
+        expect(matchExisting(questions, existing)).toEqual(["e1", "e2", null, null])
     })
 })

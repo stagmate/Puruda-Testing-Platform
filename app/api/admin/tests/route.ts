@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
+import { encodeQuestionOrder } from "@/lib/test-order"
 
 const TEST_TYPES = ["SUBJECT", "MIXED", "MOCK"]
 const RESULT_MODES = ["INSTANT", "MANUAL"]
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
         const body = await req.json()
         const { title, duration, type, courseId, batchIds, questionIds, startTime, endTime, resultMode, showRank } = body
 
-        if (!title || !Array.isArray(questionIds) || questionIds.length === 0) {
+        if (!title || typeof title !== "string" || !Array.isArray(questionIds) || questionIds.length === 0 || questionIds.some((id: unknown) => typeof id !== "string")) {
             return new NextResponse("Missing title or questions", { status: 400 })
         }
 
@@ -33,8 +34,9 @@ export async function POST(req: Request) {
 
         const test = await db.test.create({
             data: {
-                title,
+                title: title.trim().slice(0, 200),
                 duration: minutes,
+                questionOrder: encodeQuestionOrder(questionIds),
                 type: TEST_TYPES.includes(type) ? type : "MIXED",
                 courseId: courseId || null,
                 startTime: start,

@@ -25,6 +25,7 @@ type StudentQuestion = {
     optionBImageUrl?: string | null
     optionCImageUrl?: string | null
     optionDImageUrl?: string | null
+    subject?: string | null
 }
 
 type StudentTest = {
@@ -304,7 +305,10 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 <CardHeader className="flex flex-row justify-between items-center border-b bg-slate-50/50">
                     <div>
                         <CardTitle className="text-xl">{test.title}</CardTitle>
-                        <p className="text-sm text-muted-foreground">Question {currentQuestion + 1} of {test.questions.length}</p>
+                        <p className="text-sm text-muted-foreground">
+                            Question {currentQuestion + 1} of {test.questions.length}
+                            {question.subject && <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">{question.subject}</span>}
+                        </p>
                     </div>
                     {/* Simulated Camera Feed Placeholder (Optional) */}
                     <div className="hidden md:block h-16 w-24 bg-black rounded overflow-hidden relative border border-slate-300">

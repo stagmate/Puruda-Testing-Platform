@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
             const { fields, error } = normalizeQuestion(input ?? {})
             if (error || !fields) problems.push(`Question ${i + 1}: ${error}`)
             else rows.push({
+                id: randomUUID(), // chosen here so the ids can be returned in upload order
                 ...fields,
                 ...context,
                 // A question pack spans several subjects, so a row may name its own subject.
@@ -52,7 +54,7 @@ export async function POST(req: Request) {
         }
 
         const result = await db.question.createMany({ data: rows })
-        return NextResponse.json({ success: true, count: result.count })
+        return NextResponse.json({ success: true, count: result.count, ids: rows.map(r => r.id) })
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
             return new NextResponse("The selected course, subject, chapter or subtopic no longer exists", { status: 400 })

@@ -161,6 +161,10 @@ model Test {
   batches   Batch[]  @relation("BatchTests")
   
   questions Question[] @relation("TestQuestions")
+  // Question ids in the order students see them (JSON array). The relation
+  // above has no order of its own; tests made before this field fall back to
+  // oldest question first.
+  questionOrder String?
   results   TestResult[]
   attempts  TestAttempt[]
   reviews   PerformanceReview[]
