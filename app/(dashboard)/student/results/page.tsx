@@ -41,7 +41,7 @@ export default function StudentResultsPage() {
     const best = released.length ? Math.max(...released.map(r => r.percentage ?? 0)) : null
 
     return (
-        <div className="mx-auto max-w-5xl space-y-8 p-4 sm:p-8">
+        <div className="space-y-6 p-4 sm:px-6 sm:py-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Results &amp; Reports</h1>

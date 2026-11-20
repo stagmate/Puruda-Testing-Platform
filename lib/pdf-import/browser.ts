@@ -4,6 +4,7 @@
 // small overlapping batches, merge the results, then crop each diagram out of
 // its page image and upload it.
 
+import { expandToInk } from "@/lib/pdf-import/crop"
 import type { Extraction, FigureRef } from "./extraction"
 import { mergeExtractions, type ImportedQuestion } from "./merge"
 
@@ -139,20 +140,40 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     })
 }
 
-/** Crop a figure out of its rendered page (with a little padding) as a PNG. */
-// Margin around AI-located boxes: wider sideways (harmless whitespace), tighter
-// top and bottom so neighbouring text lines don't creep in.
+/**
+ * Crop a figure out of its rendered page as a PNG. Starts from the AI-located
+ * box plus a small margin (wider sideways, tighter top and bottom so
+ * neighbouring text lines don't creep in), then grows any edge that still cuts
+ * through the drawing until it reaches blank space, so a slightly-too-tight
+ * box doesn't chop off part of a diagram.
+ */
 export async function cropFigure(page: PageImage, fig: FigureRef, padX = 0.02, padY = 0.012): Promise<Blob> {
     const img = await loadImage(page.dataUrl)
     const [y1, x1, y2, x2] = fig.box.map(v => v / 1000)
-    const left = Math.max(0, (x1 - padX) * img.width)
-    const top = Math.max(0, (y1 - padY) * img.height)
-    const right = Math.min(img.width, (x2 + padX) * img.width)
-    const bottom = Math.min(img.height, (y2 + padY) * img.height)
+    const W = img.width, H = img.height
+    const start = {
+        left: Math.max(0, Math.floor((x1 - padX) * W)),
+        top: Math.max(0, Math.floor((y1 - padY) * H)),
+        right: Math.min(W, Math.ceil((x2 + padX) * W)),
+        bottom: Math.min(H, Math.ceil((y2 + padY) * H)),
+    }
+
+    const pageCanvas = document.createElement("canvas")
+    pageCanvas.width = W
+    pageCanvas.height = H
+    const pctx = pageCanvas.getContext("2d", { willReadFrequently: true })!
+    pctx.fillStyle = "#fff"
+    pctx.fillRect(0, 0, W, H)
+    pctx.drawImage(img, 0, 0)
+    const rgba = pctx.getImageData(0, 0, W, H).data
+    const gray = new Uint8Array(W * H)
+    for (let i = 0, p = 0; p < gray.length; i += 4, p++) gray[p] = (rgba[i] * 299 + rgba[i + 1] * 587 + rgba[i + 2] * 114) / 1000
+    const r = expandToInk(gray, W, H, start, Math.round(0.15 * W), Math.round(0.15 * H))
+
     const canvas = document.createElement("canvas")
-    canvas.width = Math.max(1, Math.round(right - left))
-    canvas.height = Math.max(1, Math.round(bottom - top))
-    canvas.getContext("2d")!.drawImage(img, left, top, right - left, bottom - top, 0, 0, canvas.width, canvas.height)
+    canvas.width = Math.max(1, r.right - r.left)
+    canvas.height = Math.max(1, r.bottom - r.top)
+    canvas.getContext("2d")!.drawImage(pageCanvas, r.left, r.top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height)
     return new Promise((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error("Crop failed"))), "image/png"))
 }
 

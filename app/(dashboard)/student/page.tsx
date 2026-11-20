@@ -51,14 +51,11 @@ export default function StudentDashboard() {
     const firstName = session?.user?.name?.split(" ")[0]
 
     return (
-        <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-8">
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{firstName ? `Welcome, ${firstName}` : "Dashboard"}</h1>
-                <p className="mt-1 text-sm text-slate-500">Announcements from your institute and the tests open to you.</p>
-            </div>
+        <div className="space-y-5 p-4 sm:px-6 sm:py-6">
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{firstName ? `Welcome, ${firstName}` : "Dashboard"}</h1>
 
             {/* Side by side on large screens, stacked (announcements first) on small ones */}
-            <div className="grid items-start gap-8 lg:grid-cols-2">
+            <div className="grid items-start gap-6 lg:grid-cols-2">
             {/* Announcements */}
             <section aria-labelledby="announcements" className="min-w-0 space-y-3">
                 <h2 id="announcements" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
