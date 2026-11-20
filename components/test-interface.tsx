@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { RichText } from "@/components/rich-text"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
-import { Loader2, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock, Check, CloudOff, CloudUpload, ChevronLeft, ChevronRight, LayoutGrid, LogOut, X, Eraser } from "lucide-react"
+import { Loader2, ZoomIn, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock, Check, CloudOff, CloudUpload, ChevronLeft, ChevronRight, LayoutGrid, LogOut, X, Eraser } from "lucide-react"
 import { questionStatus, summarize, type QuestionStatus } from "@/lib/test-progress"
 import { cn } from "@/lib/utils"
 
@@ -73,6 +73,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const [paletteOpen, setPaletteOpen] = useState(false)
     const [confirmSubmit, setConfirmSubmit] = useState(false)
     const [exitPrompt, setExitPrompt] = useState(false)
+    const [zoomSrc, setZoomSrc] = useState<string | null>(null)
 
     // Anti-cheat state
     const [warnings, setWarnings] = useState(0)
@@ -503,12 +504,22 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                         </div>
 
                         <div className="rounded-xl border bg-white p-5 shadow-sm sm:p-7">
-                            <div className="mb-5 whitespace-pre-line text-base leading-relaxed text-slate-900 sm:text-lg">
+                            <div className="mb-5 whitespace-pre-line text-lg font-medium leading-relaxed text-slate-900 sm:text-xl">
                                 <RichText text={question.text} />
                             </div>
                             {question.imageUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={question.imageUrl} alt="Question diagram" className="mb-6 h-auto max-h-[60vh] w-auto max-w-full rounded border bg-white object-contain" />
+                                <button
+                                    type="button"
+                                    onClick={() => setZoomSrc(question.imageUrl!)}
+                                    className="group relative mb-6 block max-w-full cursor-zoom-in rounded border bg-white"
+                                    aria-label="Enlarge the diagram"
+                                >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={question.imageUrl} alt="Question diagram" className="h-auto max-h-[70vh] w-auto max-w-full rounded object-contain" />
+                                    <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
+                                        <ZoomIn className="h-4 w-4" />Enlarge
+                                    </span>
+                                </button>
                             )}
 
                             {qType === "INTEGER" ? (
@@ -524,7 +535,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                                     />
                                 </label>
                             ) : (
-                                <div className="space-y-3" role={qType === "MULTIPLE" ? "group" : "radiogroup"} aria-label="Options">
+                                <div className="space-y-2.5" role={qType === "MULTIPLE" ? "group" : "radiogroup"} aria-label="Options">
                                     {options.map((opt, idx) => {
                                         const selected = qType === "MULTIPLE"
                                             ? Array.isArray(currentAnswer) && currentAnswer.includes(idx)
@@ -539,21 +550,21 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                                                 aria-checked={selected}
                                                 onClick={() => (qType === "MULTIPLE" ? handleCheckboxAnswer(idx) : handleAnswer(idx))}
                                                 className={cn(
-                                                    "flex min-h-16 w-full items-center gap-4 rounded-xl border-2 p-4 text-left transition-colors sm:p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
+                                                    "flex min-h-14 w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
                                                     selected ? "border-indigo-600 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
                                                 )}
                                             >
                                                 <span className={cn(
-                                                    "flex h-9 w-9 shrink-0 items-center justify-center text-base font-bold",
+                                                    "flex h-8 w-8 shrink-0 items-center justify-center text-sm font-bold",
                                                     qType === "MULTIPLE" ? "rounded-md" : "rounded-full",
                                                     selected ? "bg-indigo-600 text-white" : "border-2 border-slate-300 text-slate-600"
                                                 )}>
                                                     {selected && qType === "MULTIPLE" ? <Check className="size-5" /> : String.fromCharCode(65 + idx)}
                                                 </span>
-                                                <span className="min-w-0 flex-1 text-base text-slate-900 sm:text-lg">
+                                                <span className="min-w-0 flex-1 text-base text-slate-900">
                                                     <RichText text={opt} />
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    {img && <img src={img} alt="" className="mt-2 max-h-40 rounded" />}
+                                                    {img && <img src={img} alt="" className="mt-2 h-auto max-h-56 w-auto max-w-full rounded object-contain" />}
                                                 </span>
                                             </button>
                                         )
@@ -590,6 +601,19 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     </footer>
                 </main>
             </div>
+
+            {zoomSrc && (
+                <div className="fixed inset-0 z-[60] flex flex-col bg-black/85" role="dialog" aria-modal="true" aria-label="Diagram" onClick={() => setZoomSrc(null)}>
+                    <div className="flex justify-end p-2">
+                        <Button variant="secondary" className={BIG} onClick={() => setZoomSrc(null)}><X className="size-5" />Close</Button>
+                    </div>
+                    <div className="flex flex-1 items-start justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
+                        {/* Full size; scroll if it's bigger than the screen */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={zoomSrc} alt="Diagram, enlarged" className="h-auto max-w-none rounded bg-white" style={{ minWidth: "min(100%, 900px)" }} />
+                    </div>
+                </div>
+            )}
 
             {/* Prompts are drawn inside the test so they stay visible in fullscreen. */}
             {confirmSubmit && (
