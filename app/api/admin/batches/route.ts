@@ -7,7 +7,8 @@ export async function GET() {
     if (auth.response) return auth.response
 
     const batches = await db.batch.findMany({
-        include: { course: true }
+        include: { course: true, _count: { select: { students: true } } },
+        orderBy: { name: "asc" },
     })
     return NextResponse.json(batches)
 }

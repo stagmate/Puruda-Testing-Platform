@@ -69,7 +69,7 @@ export async function GET() {
 
     const tests = await db.test.findMany({
         include: {
-            batches: { select: { name: true } },
+            batches: { select: { id: true, name: true } },
             course: { select: { name: true } },
             _count: { select: { questions: true, results: true } }
         },

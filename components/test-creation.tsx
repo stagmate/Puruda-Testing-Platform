@@ -388,7 +388,7 @@ export function TestCreation() {
                     <div>
                         <h3 className="font-semibold mb-4">Tests</h3>
                         <div className="max-h-[700px] overflow-y-auto pr-1">
-                            <TestList tests={tests as ManagedTest[]} onChanged={fetchMetadata} canDelete={isAdmin} />
+                            <TestList tests={tests as ManagedTest[]} batches={batches} onChanged={fetchMetadata} canDelete={isAdmin} />
                         </div>
                     </div>
                 </div>

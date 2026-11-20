@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { BatchStudents } from "@/components/batch-students"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,15 +16,12 @@ export function CourseManagement() {
     const [subjects, setSubjects] = useState<any[]>([])
     const [assignments, setAssignments] = useState<any[]>([])
     const [teachers, setTeachers] = useState<any[]>([])
-    const [students, setStudents] = useState<any[]>([])
-    const [enrollments, setEnrollments] = useState<any[]>([])
 
     // Form States
     const [newCourse, setNewCourse] = useState("")
     const [newBatch, setNewBatch] = useState({ name: "", courseId: "" })
     const [newSubject, setNewSubject] = useState("")
     const [newAssignment, setNewAssignment] = useState({ teacherId: "", batchId: "", subjectId: "" })
-    const [newEnrollment, setNewEnrollment] = useState({ studentId: "", batchId: "" })
 
     // Safe fetch utility
     const safeFetch = async (url: string) => {
@@ -41,22 +39,19 @@ export function CourseManagement() {
 
     // Fetch Data
     const refreshData = async () => {
-        const [c, b, s, a, u, e] = await Promise.all([
+        const [c, b, s, a, t] = await Promise.all([
             safeFetch("/api/admin/courses"),
             safeFetch("/api/admin/batches"),
             safeFetch("/api/admin/subjects"),
             safeFetch("/api/admin/assignments"),
-            safeFetch("/api/admin/users"),
-            safeFetch("/api/admin/enrollments")
+            safeFetch("/api/admin/users?role=TEACHER&limit=100"),
         ])
 
         setCourses(c)
         setBatches(b)
         setSubjects(s)
         setAssignments(a)
-        setTeachers(u.filter((user: any) => user.role === "TEACHER"))
-        setStudents(u.filter((user: any) => user.role === "STUDENT"))
-        setEnrollments(e)
+        setTeachers(t)
     }
 
     useEffect(() => { refreshData() }, [])
@@ -87,13 +82,6 @@ export function CourseManagement() {
         setNewAssignment({ teacherId: "", batchId: "", subjectId: "" }); refreshData()
     }
 
-    const createEnrollment = async () => {
-        const { studentId, batchId } = newEnrollment
-        if (!studentId || !batchId) return
-        await fetch("/api/admin/enrollments", { method: "POST", body: JSON.stringify(newEnrollment) })
-        setNewEnrollment({ studentId: "", batchId: "" }); refreshData()
-    }
-
     return (
         <Card>
             <CardHeader><CardTitle>Academic Management</CardTitle></CardHeader>
@@ -104,7 +92,7 @@ export function CourseManagement() {
                         <TabsTrigger value="batches">Batches</TabsTrigger>
                         <TabsTrigger value="subjects">Subjects</TabsTrigger>
                         <TabsTrigger value="assignments">Assign Teachers</TabsTrigger>
-                        <TabsTrigger value="enrollments">Enroll Students</TabsTrigger>
+                        <TabsTrigger value="enrollments">Batch Students</TabsTrigger>
                     </TabsList>
 
                     {/* COURSES TAB */}
@@ -201,38 +189,7 @@ export function CourseManagement() {
 
                     {/* ENROLLMENTS TAB */}
                     <TabsContent value="enrollments" className="space-y-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border p-4 rounded-lg bg-slate-50">
-                            <div className="space-y-1">
-                                <Label>Student</Label>
-                                <Select value={newEnrollment.studentId} onValueChange={v => setNewEnrollment({ ...newEnrollment, studentId: v })}>
-                                    <SelectTrigger><SelectValue placeholder="Select Student" /></SelectTrigger>
-                                    <SelectContent>
-                                        {students.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({s.email})</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-1">
-                                <Label>Batch</Label>
-                                <Select value={newEnrollment.batchId} onValueChange={v => setNewEnrollment({ ...newEnrollment, batchId: v })}>
-                                    <SelectTrigger><SelectValue placeholder="Select Batch" /></SelectTrigger>
-                                    <SelectContent>
-                                        {batches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <Button className="col-span-2" onClick={createEnrollment}>Enroll Student in Batch</Button>
-                        </div>
-
-                        <div className="mt-4">
-                            <h3 className="font-semibold mb-2">Current Enrollments</h3>
-                            <ul className="list-disc pl-5 text-sm">
-                                {enrollments.map((e: any, i: number) => (
-                                    <li key={i}>
-                                        <b>{e.studentName}</b> is in <b>{e.batchName}</b> ({e.courseName})
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+                        <BatchStudents />
                     </TabsContent>
                 </Tabs>
             </CardContent>
