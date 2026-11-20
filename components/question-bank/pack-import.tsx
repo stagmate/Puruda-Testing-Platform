@@ -1,27 +1,45 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, CheckCircle2, Loader2, PackageOpen, Trash2 } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ClipboardList, Loader2, PackageOpen, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { readPack, toQuestionInput, type PackQuestion } from "@/lib/question-pack"
+import { matchExisting, readPack, toQuestionInput, type ReadPack } from "@/lib/question-pack"
+import { describeScheme } from "@/lib/marking"
 
 type Named = { id: string; name: string }
 type BatchRow = Named & { courseId: string }
 type PurgeSummary = { questions: number; questionsInTests: number; tests: { id: string; title: string; results: number }[] }
+type LoadedPack = ReadPack & { name: string; existing: (string | null)[] }
 
 const NONE = "none"
 const TYPE_LABEL: Record<string, string> = { SINGLE: "single", MULTIPLE: "multiple", INTEGER: "numeric" }
 const UPLOADS_AT_ONCE = 4
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
     return (await fetch(dataUrl)).blob()
+}
+
+/** Questions already in the bank for these papers, so a re-import can reuse them. */
+async function bankQuestions(papers: string[]) {
+    const found: { id: string; type: string; text: string; examTag: string | null }[] = []
+    for (const paper of papers) {
+        for (let page = 1; page <= 50; page++) {
+            const res = await fetch(`/api/admin/questions?examTag=${encodeURIComponent(paper)}&limit=200&page=${page}`)
+            if (!res.ok) break
+            const { data, meta } = await res.json()
+            found.push(...data)
+            if (page >= meta.totalPages) break
+        }
+    }
+    return found
 }
 
 export function PackImport({ courses, batches, subjects, defaultCourseId, defaultBatchId, onSaved, onSubjectsChanged }: {
@@ -34,14 +52,18 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
     onSubjectsChanged: () => Promise<unknown>
 }) {
     const input = useRef<HTMLInputElement>(null)
-    const [pack, setPack] = useState<{ name: string; title: string; questions: PackQuestion[]; problems: string[] } | null>(null)
+    const [pack, setPack] = useState<LoadedPack | null>(null)
+    const [reading, setReading] = useState(false)
     const [courseId, setCourseId] = useState(defaultCourseId)
     const [batchId, setBatchId] = useState(defaultBatchId)
+    const [makeTests, setMakeTests] = useState<boolean[]>([])
+    const [publishTests, setPublishTests] = useState(false)
     const [busy, setBusy] = useState(false)
     const [progress, setProgress] = useState("")
     const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
-    // Images already uploaded for this file, so a retry after a failed save doesn't upload them again.
+    // Images and questions already saved for this file, so a retry after a failure doesn't redo them.
     const uploaded = useRef<Map<number, string>>(new Map())
+    const savedIds = useRef<(string | null)[] | null>(null)
 
     const [summary, setSummary] = useState<PurgeSummary | null>(null)
     const loadSummary = useCallback(async () => {
@@ -56,87 +78,146 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
     const choose = async (file: File | undefined) => {
         setMessage(null)
         uploaded.current = new Map()
+        savedIds.current = null
         if (!file) return setPack(null)
+        setReading(true)
         try {
             const parsed = readPack(JSON.parse(await file.text()))
-            setPack({ name: file.name, ...parsed })
+            const papers = Array.from(new Set(parsed.questions.map(q => q.paper).filter(Boolean)))
+            const existing = parsed.problems.length ? [] : matchExisting(parsed.questions, await bankQuestions(papers))
+            setPack({ name: file.name, ...parsed, existing })
+            setMakeTests(parsed.tests.map(() => true))
         } catch {
-            setPack({ name: file.name, title: "", questions: [], problems: ["The file isn't valid JSON."] })
+            setPack({ name: file.name, title: "", questions: [], tests: [], problems: ["The file isn't valid JSON."], existing: [] })
+        } finally {
+            setReading(false)
         }
     }
 
     // Paper → subject → counts, for the preview
     const breakdown = useMemo(() => {
-        const rows = new Map<string, { paper: string; subject: string; counts: Record<string, number>; total: number }>()
-        for (const q of pack?.questions ?? []) {
+        const rows = new Map<string, { paper: string; subject: string; counts: Record<string, number>; total: number; inBank: number }>()
+        pack?.questions.forEach((q, i) => {
             const key = `${q.paper}\u0000${q.subject}`
-            const row = rows.get(key) ?? { paper: q.paper || "—", subject: q.subject, counts: {}, total: 0 }
+            const row = rows.get(key) ?? { paper: q.paper || "—", subject: q.subject, counts: {}, total: 0, inBank: 0 }
             row.counts[q.type] = (row.counts[q.type] ?? 0) + 1
             row.total++
+            if (pack.existing[i]) row.inBank++
             rows.set(key, row)
-        }
+        })
         return Array.from(rows.values())
     }, [pack])
 
-    const subjectNames = useMemo(() => Array.from(new Set((pack?.questions ?? []).map(q => q.subject))), [pack])
+    const toCreate = pack ? pack.questions.filter((_, i) => !pack.existing[i]).length : 0
+    const inBank = pack ? pack.questions.length - toCreate : 0
+    const chosenTests = pack ? pack.tests.filter((_, i) => makeTests[i]) : []
+    const subjectNames = useMemo(() => Array.from(new Set((pack?.questions ?? []).filter((_, i) => !pack?.existing[i]).map(q => q.subject))), [pack])
     const missingSubjects = subjectNames.filter(n => !subjects.some(s => sameName(s.name, n)))
 
+    const actionLabel = [
+        toCreate > 0 ? `Import ${plural(toCreate, "question")}` : "",
+        chosenTests.length > 0 ? `create ${plural(chosenTests.length, "test")}` : "",
+    ].filter(Boolean).join(" and ")
+
     const importPack = async () => {
-        if (!pack || pack.questions.length === 0 || pack.problems.length > 0) return
+        if (!pack || pack.questions.length === 0 || pack.problems.length > 0 || !actionLabel) return
         setBusy(true)
         setMessage(null)
         try {
-            // 1. Subjects, matched by name; missing ones are created.
-            const subjectIds = new Map<string, string>()
-            for (const name of subjectNames) {
-                let subject = subjects.find(s => sameName(s.name, name))
-                if (!subject) {
-                    setProgress(`Creating subject ${name}…`)
-                    const res = await fetch("/api/admin/subjects", {
-                        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+            let ids = savedIds.current
+            let created = 0
+            if (!ids) {
+                const todo = pack.questions.map((_, i) => i).filter(i => !pack.existing[i])
+                const newIds: string[] = []
+                if (todo.length) {
+                    // 1. Subjects, matched by name; missing ones are created.
+                    const subjectIds = new Map<string, string>()
+                    for (const name of subjectNames) {
+                        let subject = subjects.find(s => sameName(s.name, name))
+                        if (!subject) {
+                            setProgress(`Creating subject ${name}…`)
+                            const res = await fetch("/api/admin/subjects", {
+                                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+                            })
+                            if (!res.ok) throw new Error(`Couldn't create the subject ${name}: ${await res.text()}`)
+                            subject = await res.json() as Named
+                        }
+                        subjectIds.set(name, subject.id)
+                    }
+                    if (missingSubjects.length) await onSubjectsChanged()
+
+                    // 2. Images, a few at a time.
+                    const images = todo.filter(i => pack.questions[i].image && !uploaded.current.has(i))
+                    let done = todo.filter(i => pack.questions[i].image).length - images.length
+                    const total = done + images.length
+                    if (total) setProgress(`Uploading images ${done}/${total}…`)
+                    const worker = async () => {
+                        for (let next = images.shift(); next !== undefined; next = images.shift()) {
+                            const form = new FormData()
+                            form.append("file", await dataUrlToBlob(pack.questions[next].image), `question-${next + 1}.png`)
+                            const res = await fetch("/api/upload", { method: "POST", body: form })
+                            if (!res.ok) throw new Error(`Image for question ${next + 1} failed to upload: ${await res.text()}`)
+                            uploaded.current.set(next, (await res.json()).url)
+                            setProgress(`Uploading images ${++done}/${total}…`)
+                        }
+                    }
+                    await Promise.all(Array.from({ length: UPLOADS_AT_ONCE }, worker))
+
+                    // 3. Save the new questions in one all-or-nothing request.
+                    setProgress("Saving questions…")
+                    const res = await fetch("/api/admin/questions/bulk", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            questions: todo.map(i => toQuestionInput(pack.questions[i], uploaded.current.get(i) ?? null, subjectIds.get(pack.questions[i].subject))),
+                            context: { courseId: courseId || null, batchId: batchId || null },
+                        }),
                     })
-                    if (!res.ok) throw new Error(`Couldn't create the subject ${name}: ${await res.text()}`)
-                    subject = await res.json() as Named
+                    if (!res.ok) throw new Error(await res.text())
+                    const body = await res.json()
+                    newIds.push(...body.ids)
+                    created = body.count
                 }
-                subjectIds.set(name, subject.id)
+                const fresh = [...newIds]
+                ids = pack.existing.map(id => id ?? fresh.shift() ?? null)
+                savedIds.current = ids
+                onSaved()
             }
-            if (missingSubjects.length) await onSubjectsChanged()
 
-            // 2. Images, a few at a time.
-            const todo = pack.questions.map((q, i) => i).filter(i => pack.questions[i].image && !uploaded.current.has(i))
-            let done = pack.questions.filter(q => q.image).length - todo.length
-            const total = done + todo.length
-            setProgress(`Uploading images ${done}/${total}…`)
-            const worker = async () => {
-                for (let next = todo.shift(); next !== undefined; next = todo.shift()) {
-                    const form = new FormData()
-                    form.append("file", await dataUrlToBlob(pack.questions[next].image), `question-${next + 1}.png`)
-                    const res = await fetch("/api/upload", { method: "POST", body: form })
-                    if (!res.ok) throw new Error(`Image for question ${next + 1} failed to upload: ${await res.text()}`)
-                    uploaded.current.set(next, (await res.json()).url)
-                    setProgress(`Uploading images ${++done}/${total}…`)
-                }
+            // 4. Tests, each with its paper's questions in pack order.
+            const made: string[] = []
+            for (const t of chosenTests) {
+                setProgress(`Creating test ${t.title}…`)
+                const questionIds = pack.questions.map((q, i) => (q.paper === t.paper ? ids[i] : null)).filter((id): id is string => !!id)
+                const res = await fetch("/api/admin/tests", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        title: t.title, duration: t.duration, type: "MOCK", questionIds,
+                        marking: t.marking, publish: publishTests,
+                        courseId: courseId || null, batchIds: batchId ? [batchId] : [],
+                    }),
+                })
+                if (!res.ok) throw new Error(`Saved the questions, but couldn't create the test ${t.title}: ${await res.text()}`)
+                made.push(`${t.title} (${plural(questionIds.length, "question")}, ${t.duration} min)`)
+                setMakeTests(m => m.map((v, i) => (pack.tests[i] === t ? false : v)))
             }
-            await Promise.all(Array.from({ length: UPLOADS_AT_ONCE }, worker))
-
-            // 3. Save all questions in one all-or-nothing request.
-            setProgress("Saving questions…")
-            const questions = pack.questions.map((q, i) =>
-                toQuestionInput(q, uploaded.current.get(i) ?? null, subjectIds.get(q.subject)))
-            const res = await fetch("/api/admin/questions/bulk", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ questions, context: { courseId: courseId || null, batchId: batchId || null } }),
-            })
-            if (!res.ok) throw new Error(await res.text())
-            const { count } = await res.json()
 
             const where = [courses.find(c => c.id === courseId)?.name, batches.find(b => b.id === batchId)?.name].filter(Boolean).join(" › ")
-            setMessage({ ok: true, text: `Imported ${count} questions${where ? ` into ${where}` : ""}.` })
+            const parts: string[] = []
+            if (created) parts.push(`Imported ${plural(created, "question")}${where ? ` into ${where}` : ""}.`)
+            if (inBank && made.length) parts.push(`Reused ${inBank} already in the bank.`)
+            if (made.length) {
+                const audience = batchId ? where : "all students"
+                parts.push(publishTests
+                    ? `Created ${made.length === 1 ? "the test" : "the tests"} ${made.join(" and ")}, published to ${audience}.`
+                    : `Created ${made.length === 1 ? "the test" : "the tests"} ${made.join(" and ")} as drafts for ${audience}. Publish or schedule them under Tests.`)
+            }
+            setMessage({ ok: true, text: parts.join(" ") })
             setPack(null)
             uploaded.current = new Map()
+            savedIds.current = null
             if (input.current) input.current.value = ""
-            onSaved()
             loadSummary()
         } catch (e) {
             setMessage({ ok: false, text: e instanceof Error ? e.message : "Import failed" })
@@ -154,14 +235,15 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
                 <div>
                     <h3 className="flex items-center gap-2 font-medium"><PackageOpen className="h-4 w-4" />Import a question pack</h3>
                     <p className="text-sm text-slate-600">
-                        A pack (.json) holds complete papers: each question as an image with its subject, type and answer key.
-                        Subjects are matched by name and created if they don&apos;t exist yet.
+                        A pack (.json) holds complete papers with their answer keys, and can include tests made from them.
+                        Subjects are matched by name and created if they don&apos;t exist yet. Questions already in the bank are reused, not duplicated.
                     </p>
                 </div>
 
-                <Input ref={input} type="file" accept=".json,application/json" onChange={e => choose(e.target.files?.[0])} disabled={busy} className="bg-white" />
+                <Input ref={input} type="file" accept=".json,application/json" onChange={e => choose(e.target.files?.[0])} disabled={busy || reading} className="bg-white" />
+                {reading && <p className="flex items-center gap-2 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Reading the pack…</p>}
 
-                {pack && (
+                {pack && !reading && (
                     <div className="space-y-3">
                         {pack.title && <p className="text-sm font-medium">{pack.title}</p>}
                         {breakdown.length > 0 && (
@@ -181,6 +263,7 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
                                                 <td className="px-3 py-2 text-slate-700">
                                                     <span className="font-semibold">{r.total}</span>
                                                     <span className="text-slate-500"> ({Object.entries(r.counts).map(([t, n]) => `${n} ${TYPE_LABEL[t] ?? t.toLowerCase()}`).join(", ")})</span>
+                                                    {r.inBank > 0 && <span className="ml-1.5 rounded bg-emerald-100 px-1 text-[10px] font-semibold uppercase text-emerald-800">{r.inBank === r.total ? "in bank" : `${r.inBank} in bank`}</span>}
                                                 </td>
                                             </tr>
                                         ))}
@@ -200,6 +283,33 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
 
                         {pack.problems.length === 0 && (
                             <>
+                                {pack.tests.length > 0 && (
+                                    <div className="space-y-2 rounded-md border bg-white p-3">
+                                        <p className="flex items-center gap-2 text-sm font-medium"><ClipboardList className="h-4 w-4" />Tests in this pack</p>
+                                        {pack.tests.map((t, i) => (
+                                            <label key={t.title} className="flex items-start gap-2 text-sm">
+                                                <Checkbox checked={!!makeTests[i]} onCheckedChange={v => setMakeTests(m => m.map((x, j) => (j === i ? v === true : x)))} disabled={busy} className="mt-0.5" />
+                                                <span>
+                                                    Create <span className="font-medium">{t.title}</span>
+                                                    <span className="text-slate-500"> — {plural(pack.questions.filter(q => q.paper === t.paper).length, "question")} in paper order, {t.duration} min</span>
+                                                    <span className="block text-xs text-slate-500">Marking: {describeScheme(t.marking)}</span>
+                                                </span>
+                                            </label>
+                                        ))}
+                                        <label className="flex items-start gap-2 border-t pt-2 text-sm">
+                                            <Checkbox checked={publishTests} onCheckedChange={v => setPublishTests(v === true)} disabled={busy} className="mt-0.5" />
+                                            <span>
+                                                Publish now
+                                                <span className="block text-xs text-slate-500">
+                                                    {publishTests
+                                                        ? "Students in the batch chosen below (or every student, if no batch) can see the tests straight away."
+                                                        : "The tests are saved as drafts. Publish or schedule them under Tests when you're ready."}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                )}
+
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <div className="space-y-1">
                                         <Label className="text-xs text-slate-600">Course</Label>
@@ -222,15 +332,21 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
                                         </Select>
                                     </div>
                                 </div>
-                                {summary && summary.questions > 0 && (
-                                    <p className="flex items-start gap-2 text-sm text-amber-800">
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                                        The bank already has {summary.questions} question{summary.questions === 1 ? "" : "s"}. They&apos;ll stay; remove them above first if this pack should replace them.
+                                {inBank > 0 && (
+                                    <p className="flex items-start gap-2 text-sm text-emerald-800">
+                                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                                        {inBank === pack.questions.length ? "All" : inBank} of these questions are already in the bank and will be reused{toCreate ? `; ${toCreate} new one${toCreate === 1 ? "" : "s"} will be added` : ""}.
                                     </p>
                                 )}
-                                <Button onClick={importPack} disabled={busy} className="w-full sm:w-auto">
+                                {summary && summary.questions > inBank && toCreate > 0 && (
+                                    <p className="flex items-start gap-2 text-sm text-amber-800">
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                        The bank has other questions too. They&apos;ll stay; remove them above first if this pack should replace them.
+                                    </p>
+                                )}
+                                <Button onClick={importPack} disabled={busy || !actionLabel} className="w-full sm:w-auto">
                                     {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    {busy ? progress || "Importing…" : `Import ${pack.questions.length} questions`}
+                                    {busy ? progress || "Working…" : actionLabel ? actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1) : "Nothing to import"}
                                 </Button>
                             </>
                         )}

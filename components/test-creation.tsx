@@ -10,7 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Copy, Printer, Trash2 } from "lucide-react"
+import { useSession } from "next-auth/react"
+import { MarkingFields, TestList, type ManagedTest } from "@/components/test-manager"
+import { MARKING_PRESETS, type MarkingScheme } from "@/lib/marking"
 
 export function TestCreation() {
     const [courses, setCourses] = useState<any[]>([])
@@ -110,6 +112,10 @@ export function TestCreation() {
     const [endTime, setEndTime] = useState("")
     const [resultMode, setResultMode] = useState("INSTANT")
     const [showRank, setShowRank] = useState(false)
+    const [marking, setMarking] = useState<MarkingScheme>(structuredClone(MARKING_PRESETS.STANDARD.scheme))
+    const [publishNow, setPublishNow] = useState(true)
+    const { data: session } = useSession()
+    const isAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN"
 
     // ... (rest of state)
 
@@ -137,7 +143,9 @@ export function TestCreation() {
                 startTime: startTime ? new Date(startTime).toISOString() : null,
                 endTime: endTime ? new Date(endTime).toISOString() : null,
                 resultMode,
-                showRank
+                showRank,
+                marking,
+                publish: publishNow,
             })
         })
 
@@ -148,6 +156,7 @@ export function TestCreation() {
             setEndTime("")
             setResultMode("INSTANT")
             setShowRank(false)
+            setMarking(structuredClone(MARKING_PRESETS.STANDARD.scheme))
             setGeneratedIds([])
             setManualSelectedIds([])
             fetchMetadata()
@@ -248,6 +257,10 @@ export function TestCreation() {
                             <div className="space-y-2">
                                 <Label>Duration (mins)</Label>
                                 <Input type="number" value={duration} onChange={e => setDuration(e.target.value)} />
+                            </div>
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label>Marking</Label>
+                                <MarkingFields value={marking} onChange={setMarking} />
                             </div>
                         </div>
 
@@ -364,50 +377,18 @@ export function TestCreation() {
                             </TabsContent>
                         </Tabs>
 
-                        <Button onClick={handleCreateTest} className="w-full mt-4" size="lg">Create & Publish Test</Button>
+                        <label className="mt-4 flex items-center gap-2 text-sm">
+                            <Checkbox checked={publishNow} onCheckedChange={c => setPublishNow(c === true)} />
+                            Publish now (otherwise it is saved as a draft that students can&apos;t see)
+                        </label>
+                        <Button onClick={handleCreateTest} className="w-full mt-2" size="lg">{publishNow ? "Create & Publish Test" : "Create Draft Test"}</Button>
                     </div>
 
                     {/* Right: List */}
                     <div>
-                        <h3 className="font-semibold mb-4">Active Tests</h3>
-                        <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                            {tests.map(t => (
-                                <div key={t.id} className="p-3 border rounded hover:bg-slate-50">
-                                    <div className="flex justify-between font-medium">
-                                        <span>{t.title}</span>
-                                        <span className="text-sm text-muted-foreground">{t.duration}m</span>
-                                    </div>
-                                    <div className="text-xs text-muted-foreground mt-1">
-                                        {t.course?.name} • {t.batches.map((b: any) => b.name).join(", ")} • {t._count.questions} Qs
-                                    </div>
-                                    <div className="flex gap-2 mt-2 justify-end items-center">
-                                        <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/student/test/${t.id}`); alert("Copied!") }}>
-                                            <Copy className="h-4 w-4 mr-2" /> Link
-                                        </Button>
-
-                                        <div className="relative">
-                                            <select
-                                                className="h-9 w-[100px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none"
-                                                onChange={(e) => {
-                                                    if (e.target.value) window.open(`/print/test/${t.id}?mode=${e.target.value}`, '_blank');
-                                                    e.target.value = ""; // Reset
-                                                }}
-                                                defaultValue=""
-                                            >
-                                                <option value="" disabled>Print...</option>
-                                                <option value="student">Student Paper</option>
-                                                <option value="teacher">Teacher Copy</option>
-                                                <option value="key">Answer Key</option>
-                                            </select>
-                                            <Printer className="absolute right-2 top-2.5 h-4 w-4 opacity-50 pointer-events-none" />
-                                        </div>
-
-                                        <Button variant="ghost" size="sm" className="text-red-500">
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
+                        <h3 className="font-semibold mb-4">Tests</h3>
+                        <div className="max-h-[700px] overflow-y-auto pr-1">
+                            <TestList tests={tests as ManagedTest[]} onChanged={fetchMetadata} canDelete={isAdmin} />
                         </div>
                     </div>
                 </div>

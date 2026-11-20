@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { requireRole } from "@/lib/api-auth"
 import { parseOptions } from "@/lib/grading"
 import { attemptDeadline, studentAccessError } from "@/lib/test-access"
+import { orderTestQuestions } from "@/lib/test-order"
 
 export async function GET(
     request: Request,
@@ -32,6 +33,8 @@ export async function GET(
                         optionBImageUrl: true,
                         optionCImageUrl: true,
                         optionDImageUrl: true,
+                        createdAt: true,
+                        subject: { select: { name: true } },
                     }
                 }
             }
@@ -66,7 +69,11 @@ export async function GET(
             duration: test.duration,
             deadline,
             serverNow: new Date(),
-            questions: test.questions.map(q => ({ ...q, options: parseOptions(q.options) }))
+            questions: orderTestQuestions(test.questions, test.questionOrder).map(({ createdAt: _createdAt, subject, ...q }) => ({
+                ...q,
+                subject: subject?.name ?? null,
+                options: parseOptions(q.options),
+            }))
         })
     } catch (error) {
         console.error("[TEST_GET]", error)

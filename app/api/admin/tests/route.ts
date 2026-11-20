@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
+import { encodeQuestionOrder } from "@/lib/test-order"
+import { normalizeScheme } from "@/lib/marking"
 
 const TEST_TYPES = ["SUBJECT", "MIXED", "MOCK"]
 const RESULT_MODES = ["INSTANT", "MANUAL"]
@@ -11,9 +13,9 @@ export async function POST(req: Request) {
 
     try {
         const body = await req.json()
-        const { title, duration, type, courseId, batchIds, questionIds, startTime, endTime, resultMode, showRank } = body
+        const { title, duration, type, courseId, batchIds, questionIds, startTime, endTime, resultMode, showRank, marking, publish } = body
 
-        if (!title || !Array.isArray(questionIds) || questionIds.length === 0) {
+        if (!title || typeof title !== "string" || !Array.isArray(questionIds) || questionIds.length === 0 || questionIds.some((id: unknown) => typeof id !== "string")) {
             return new NextResponse("Missing title or questions", { status: 400 })
         }
 
@@ -33,14 +35,18 @@ export async function POST(req: Request) {
 
         const test = await db.test.create({
             data: {
-                title,
+                title: title.trim().slice(0, 200),
                 duration: minutes,
+                questionOrder: encodeQuestionOrder(questionIds),
                 type: TEST_TYPES.includes(type) ? type : "MIXED",
                 courseId: courseId || null,
                 startTime: start,
                 endTime: end,
                 resultMode: RESULT_MODES.includes(resultMode) ? resultMode : "INSTANT",
                 showRank: !!showRank,
+                // Published unless the caller asks for a draft.
+                isPublished: publish !== false,
+                markingScheme: JSON.stringify(normalizeScheme(marking ?? "STANDARD")),
                 batches: {
                     connect: (Array.isArray(batchIds) ? batchIds : []).map((id: string) => ({ id }))
                 },
@@ -65,7 +71,7 @@ export async function GET() {
         include: {
             batches: { select: { name: true } },
             course: { select: { name: true } },
-            _count: { select: { questions: true } }
+            _count: { select: { questions: true, results: true } }
         },
         orderBy: { createdAt: 'desc' }
     })

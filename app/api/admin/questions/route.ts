@@ -25,6 +25,8 @@ export async function GET(req: Request) {
     if (ctx.subtopicId) where.subtopicId = ctx.subtopicId
     if (difficulty && isDifficulty(difficulty)) where.difficulty = difficulty
     if (type && isQuestionType(type)) where.type = type
+    const examTag = searchParams.get("examTag")
+    if (examTag) where.examTag = examTag
     if (search) where.OR = [
         { text: { contains: search, mode: "insensitive" } },
         { examTag: { contains: search, mode: "insensitive" } },
