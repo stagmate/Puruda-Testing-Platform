@@ -39,6 +39,8 @@ type StudentTest = {
 type SubmitResult = { score?: number; total?: number; resultMode: string }
 
 const MAX_WARNINGS = 3
+// Large, touch-friendly buttons for the test screen.
+const BIG = "h-12 px-5 text-base"
 
 function formatTime(ms: number) {
     const total = Math.max(0, Math.floor(ms / 1000))
@@ -301,7 +303,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     )}
 
                     <div className="flex gap-4 justify-center">
-                        <Button variant="outline" onClick={() => onComplete?.()}>Return to Dashboard</Button>
+                        <Button variant="outline" className={BIG} onClick={() => onComplete?.()}>Return to Dashboard</Button>
                     </div>
                 </CardContent>
             </Card>
@@ -334,7 +336,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
             {groups.map((g, gi) => (
                 <div key={gi}>
                     {g.subject && <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.subject}</p>}
-                    <div className="grid grid-cols-5 gap-1.5">
+                    <div className="grid grid-cols-5 gap-2">
                         {g.items.map(i => (
                             <PaletteButton
                                 key={i}
@@ -361,7 +363,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                         This test is strictly proctored. You must enable fullscreen mode to continue.
                         Exiting fullscreen or switching tabs is recorded as suspicious activity.
                     </p>
-                    <Button onClick={requestFullscreen} size="lg" className="bg-red-600 hover:bg-red-700 font-bold">
+                    <Button onClick={requestFullscreen} className={cn(BIG, "h-14 px-8 bg-red-600 hover:bg-red-700 font-bold")}>
                         Enter Fullscreen Mode
                     </Button>
                 </div>
@@ -369,8 +371,8 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
 
             {/* Top bar */}
             <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-white px-3 py-2 sm:px-5">
-                <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setPaletteOpen(true)} aria-label="Show question list">
-                    <LayoutGrid className="mr-1.5 h-4 w-4" />{currentQuestion + 1}/{test.questions.length}
+                <Button variant="outline" className={cn(BIG, "px-4 lg:hidden")} onClick={() => setPaletteOpen(true)} aria-label="Show question list">
+                    <LayoutGrid className="size-5" />{currentQuestion + 1}/{test.questions.length}
                 </Button>
                 <div className="order-first min-w-0 basis-full sm:order-none sm:basis-0 sm:flex-1">
                     <h1 className="truncate font-semibold text-slate-900">{test.title}</h1>
@@ -389,25 +391,25 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 <Button
                     onClick={() => setConfirmSubmit(true)}
                     disabled={!progress.canSubmit || submitting}
-                    className="bg-green-600 hover:bg-green-700"
+                    className={cn(BIG, "bg-green-600 px-6 font-semibold hover:bg-green-700")}
                     title={progress.canSubmit ? "Submit the test" : `Open every question to submit (${progress.notVisited} not visited yet)`}
                 >
-                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {submitting && <Loader2 className="mr-1 size-5 animate-spin" />}
                     Submit
                 </Button>
             </header>
 
             <div className="flex min-h-0 flex-1">
                 {/* Question palette: left column on large screens, a drawer on small ones */}
-                <aside className="hidden w-72 shrink-0 overflow-y-auto border-r bg-white p-4 lg:block" aria-label="Questions">
+                <aside className="hidden w-80 shrink-0 overflow-y-auto border-r bg-white p-4 lg:block" aria-label="Questions">
                     {palette}
                 </aside>
                 {paletteOpen && (
                     <div className="fixed inset-0 z-[45] flex lg:hidden">
-                        <div className="w-[min(20rem,85vw)] overflow-y-auto bg-white p-4 shadow-xl" aria-label="Questions">
+                        <div className="w-[min(22rem,88vw)] overflow-y-auto bg-white p-4 shadow-xl" aria-label="Questions">
                             <div className="mb-3 flex items-center justify-between">
                                 <p className="font-semibold">Questions</p>
-                                <Button variant="ghost" size="icon" onClick={() => setPaletteOpen(false)} aria-label="Close question list"><X className="h-4 w-4" /></Button>
+                                <Button variant="ghost" className="size-12" onClick={() => setPaletteOpen(false)} aria-label="Close question list"><X className="size-6" /></Button>
                             </div>
                             {palette}
                         </div>
@@ -463,18 +465,18 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                                                 aria-checked={selected}
                                                 onClick={() => (qType === "MULTIPLE" ? handleCheckboxAnswer(idx) : handleAnswer(idx))}
                                                 className={cn(
-                                                    "flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
+                                                    "flex min-h-16 w-full items-center gap-4 rounded-xl border-2 p-4 text-left transition-colors sm:p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
                                                     selected ? "border-indigo-600 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
                                                 )}
                                             >
                                                 <span className={cn(
-                                                    "flex h-7 w-7 shrink-0 items-center justify-center text-sm font-bold",
+                                                    "flex h-9 w-9 shrink-0 items-center justify-center text-base font-bold",
                                                     qType === "MULTIPLE" ? "rounded-md" : "rounded-full",
                                                     selected ? "bg-indigo-600 text-white" : "border-2 border-slate-300 text-slate-600"
                                                 )}>
-                                                    {selected && qType === "MULTIPLE" ? <Check className="h-4 w-4" /> : String.fromCharCode(65 + idx)}
+                                                    {selected && qType === "MULTIPLE" ? <Check className="size-5" /> : String.fromCharCode(65 + idx)}
                                                 </span>
-                                                <span className="min-w-0 flex-1 pt-0.5 text-base text-slate-900">
+                                                <span className="min-w-0 flex-1 text-base text-slate-900 sm:text-lg">
                                                     <RichText text={opt} />
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     {img && <img src={img} alt="" className="mt-2 max-h-40 rounded" />}
@@ -494,21 +496,21 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     </div>
 
                     {/* Navigation */}
-                    <footer className="flex items-center gap-2 border-t bg-white px-3 py-3 sm:px-8">
-                        <Button variant="outline" onClick={() => goTo(currentQuestion - 1)} disabled={currentQuestion === 0}>
-                            <ChevronLeft className="mr-1 h-4 w-4" />Previous
+                    <footer className="flex items-center gap-2 border-t bg-white px-3 py-3 sm:gap-3 sm:px-8">
+                        <Button variant="outline" className={BIG} onClick={() => goTo(currentQuestion - 1)} disabled={currentQuestion === 0}>
+                            <ChevronLeft className="size-5" />Previous
                         </Button>
-                        <Button variant="ghost" onClick={clearAnswer} disabled={progress.answered === 0 || currentAnswer === undefined}>
-                            <Eraser className="mr-1.5 h-4 w-4" /><span className="hidden sm:inline">Clear response</span><span className="sm:hidden">Clear</span>
+                        <Button variant="ghost" className={BIG} onClick={clearAnswer} disabled={progress.answered === 0 || currentAnswer === undefined}>
+                            <Eraser className="size-5" /><span className="hidden sm:inline">Clear response</span><span className="sm:hidden">Clear</span>
                         </Button>
                         <div className="flex-1" />
                         {isLast ? (
-                            <Button onClick={() => setConfirmSubmit(true)} disabled={!progress.canSubmit || submitting} className="bg-green-600 hover:bg-green-700">
+                            <Button onClick={() => setConfirmSubmit(true)} disabled={!progress.canSubmit || submitting} className={cn(BIG, "bg-green-600 px-6 font-semibold hover:bg-green-700")}>
                                 Submit test
                             </Button>
                         ) : (
-                            <Button onClick={() => goTo(currentQuestion + 1)}>
-                                Next<ChevronRight className="ml-1 h-4 w-4" />
+                            <Button className={cn(BIG, "px-6 font-semibold")} onClick={() => goTo(currentQuestion + 1)}>
+                                Next<ChevronRight className="size-5" />
                             </Button>
                         )}
                     </footer>
@@ -521,9 +523,9 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     title="Submit the test?"
                     onClose={() => setConfirmSubmit(false)}
                     actions={<>
-                        <Button variant="outline" onClick={() => setConfirmSubmit(false)}>Keep working</Button>
-                        <Button className="bg-green-600 hover:bg-green-700" disabled={submitting} onClick={() => { setConfirmSubmit(false); handleSubmit() }}>
-                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Submit
+                        <Button variant="outline" className={BIG} onClick={() => setConfirmSubmit(false)}>Keep working</Button>
+                        <Button className={cn(BIG, "bg-green-600 font-semibold hover:bg-green-700")} disabled={submitting} onClick={() => { setConfirmSubmit(false); handleSubmit() }}>
+                            {submitting && <Loader2 className="size-5 animate-spin" />}Submit
                         </Button>
                     </>}
                 >
@@ -537,9 +539,9 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     tone="danger"
                     onClose={() => setExitPrompt(false)}
                     actions={<>
-                        <Button onClick={() => setExitPrompt(false)}>Stay in the test</Button>
-                        <Button variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" disabled={submitting} onClick={exitTest}>
-                            {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <LogOut className="mr-1.5 h-4 w-4" />}Submit &amp; exit
+                        <Button className={cn(BIG, "font-semibold")} onClick={() => setExitPrompt(false)}>Stay in the test</Button>
+                        <Button variant="outline" className={cn(BIG, "border-red-300 text-red-700 hover:bg-red-50")} disabled={submitting} onClick={exitTest}>
+                            {submitting ? <Loader2 className="size-5 animate-spin" /> : <LogOut className="size-5" />}Submit &amp; exit
                         </Button>
                     </>}
                 >
@@ -566,7 +568,7 @@ function PaletteButton({ number, status, current, onClick }: { number: number; s
             aria-label={`Question ${number}, ${label}${current ? ", current" : ""}`}
             aria-current={current ? "step" : undefined}
             className={cn(
-                "h-9 rounded-md border-2 text-sm font-semibold tabular-nums transition-colors",
+                "h-11 rounded-lg border-2 text-base font-semibold tabular-nums transition-colors",
                 STATUS_STYLE[status],
                 current && "ring-2 ring-indigo-600 ring-offset-2"
             )}
