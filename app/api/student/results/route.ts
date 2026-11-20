@@ -3,11 +3,12 @@ import { db } from "@/lib/db"
 import { requireRole } from "@/lib/api-auth"
 import { parseScheme, describeScheme } from "@/lib/marking"
 import { orderTestQuestions } from "@/lib/test-order"
+import { resultsVisible } from "@/lib/result-visibility"
 import { parseAnswers, rankOf, subjectBreakdown } from "@/lib/result-breakdown"
 
 // Every test the logged-in student has submitted, newest first, with the
 // per-subject breakdown. Results of "manual release" tests are listed without
-// their marks.
+// their marks until staff release them.
 export async function GET() {
     const auth = await requireRole(["STUDENT"])
     if (auth.response) return auth.response
@@ -18,20 +19,20 @@ export async function GET() {
         include: {
             test: {
                 select: {
-                    id: true, title: true, duration: true, resultMode: true, showRank: true, markingScheme: true, questionOrder: true,
+                    id: true, title: true, duration: true, resultMode: true, resultsReleasedAt: true, showRank: true, markingScheme: true, questionOrder: true,
                     questions: { select: { id: true, type: true, options: true, correct: true, createdAt: true, subject: { select: { name: true } } } },
                 },
             },
         },
     })
 
-    const rankTests = results.filter(r => r.test.showRank && r.test.resultMode !== "MANUAL").map(r => r.testId)
+    const rankTests = results.filter(r => r.test.showRank && resultsVisible(r.test)).map(r => r.testId)
     const allScores = rankTests.length
         ? await db.testResult.findMany({ where: { testId: { in: rankTests } }, select: { testId: true, score: true } })
         : []
 
     return NextResponse.json(results.map(r => {
-        const released = r.test.resultMode !== "MANUAL"
+        const released = resultsVisible(r.test)
         const scheme = parseScheme(r.test.markingScheme)
         const base = {
             id: r.id,

@@ -152,6 +152,7 @@ model Test {
   startTime   DateTime? // If set, test is only accessible after this time
   endTime     DateTime? // If set, test must be submitted by this time
   resultMode  String    @default("INSTANT") // INSTANT, MANUAL
+  resultsReleasedAt DateTime? // MANUAL tests: when staff released the results to students
   isPublished Boolean   @default(true) // If false, hidden from students entirely (draft)
   showRank    Boolean   @default(false) // If true, students see their Rank
   

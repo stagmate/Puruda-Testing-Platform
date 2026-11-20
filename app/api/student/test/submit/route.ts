@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole } from "@/lib/api-auth"
 import { gradeWithScheme, parseScheme } from "@/lib/marking"
+import { resultsVisible } from "@/lib/result-visibility"
 import { attemptDeadline, studentAccessError, SUBMIT_GRACE_MS } from "@/lib/test-access"
 
 export async function POST(req: Request) {
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
         if (!result) return new NextResponse("You have already submitted this test", { status: 409 })
 
         // In MANUAL mode the score stays hidden until staff release it.
-        if (test.resultMode === "MANUAL") {
+        if (!resultsVisible(test)) {
             return NextResponse.json({ id: result.id, resultMode: test.resultMode })
         }
         return NextResponse.json({ id: result.id, score, total, resultMode: test.resultMode })

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { parseScheme } from "@/lib/marking"
+import { VISIBLE_RESULTS_WHERE } from "@/lib/result-visibility"
 import { orderTestQuestions } from "@/lib/test-order"
 import { parseAnswers, subjectBreakdown } from "@/lib/result-breakdown"
 
@@ -27,11 +28,11 @@ export async function POST(req: Request) {
 
         if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 })
 
-        // Fetch Test Results. Students don't see marks of "manual release" tests.
+        // Fetch Test Results. Students don't see marks of unreleased "manual release" tests.
         const results = await db.testResult.findMany({
             where: {
                 userId: targetId,
-                ...(currentUser.role === "STUDENT" ? { test: { resultMode: { not: "MANUAL" } } } : {}),
+                ...(currentUser.role === "STUDENT" ? { test: VISIBLE_RESULTS_WHERE } : {}),
             },
             orderBy: { completedAt: 'desc' },
             include: {
