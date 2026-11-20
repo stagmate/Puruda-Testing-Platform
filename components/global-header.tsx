@@ -4,7 +4,8 @@ import { useState } from "react"
 import { usePathname } from "next/navigation"
 import { isDashboardPath } from "@/lib/dashboard-routes"
 import Link from "next/link"
-import { GraduationCap, Menu, X, ArrowRight, ShieldCheck } from "lucide-react"
+import { BrandLogo } from "@/components/brand"
+import { Menu, X, ArrowRight, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DemoRequestDialog } from "./landing/demo-request-dialog"
 
@@ -18,18 +19,8 @@ export function GlobalHeader() {
         <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-[100] h-16 sm:h-20 transition-all">
             <div className="max-w-6xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
                 {/* Brand Logo */}
-                <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
-                        <GraduationCap className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <div className="text-lg font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-slate-900 bg-clip-text text-transparent leading-none">
-                            Puruda Platform
-                        </div>
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                            Testing & Examination Engine
-                        </span>
-                    </div>
+                <Link href="/" className="flex items-center hover:opacity-90 transition-opacity" aria-label="Rankify.me home">
+                    <BrandLogo className="h-9 sm:h-11" priority />
                 </Link>
 
                 {/* Desktop Nav Items */}

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/api-auth"
 import { db } from "@/lib/db"
+import { parseScheme } from "@/lib/marking"
+import { orderTestQuestions } from "@/lib/test-order"
+import { parseAnswers, subjectBreakdown } from "@/lib/result-breakdown"
 
 export async function POST(req: Request) {
     try {
@@ -24,11 +27,21 @@ export async function POST(req: Request) {
 
         if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 })
 
-        // Fetch Test Results
+        // Fetch Test Results. Students don't see marks of "manual release" tests.
         const results = await db.testResult.findMany({
-            where: { userId: targetId },
+            where: {
+                userId: targetId,
+                ...(currentUser.role === "STUDENT" ? { test: { resultMode: { not: "MANUAL" } } } : {}),
+            },
             orderBy: { completedAt: 'desc' },
-            include: { test: true }
+            include: {
+                test: {
+                    select: {
+                        title: true, markingScheme: true, questionOrder: true,
+                        questions: { select: { id: true, type: true, options: true, correct: true, createdAt: true, subject: { select: { name: true } } } },
+                    },
+                },
+            },
         })
 
         // Calculate Stats
@@ -37,15 +50,16 @@ export async function POST(req: Request) {
         const maxScore = results.reduce((acc, r) => acc + r.total, 0)
         const averageAccuracy = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
 
-        // Subject Breakdown
+        // Subject breakdown from the saved answers, question by question
         const subjectStats: Record<string, { score: number, total: number }> = {}
-
-        results.forEach((r: any) => {
-            const subject = r.test.type === 'SUBJECT' ? r.test.title.split(' ')[0] : 'General'
-            if (!subjectStats[subject]) subjectStats[subject] = { score: 0, total: 0 }
-            subjectStats[subject].score += r.score
-            subjectStats[subject].total += r.total
-        })
+        for (const r of results) {
+            const rows = subjectBreakdown(orderTestQuestions(r.test.questions, r.test.questionOrder), parseAnswers(r.answers), parseScheme(r.test.markingScheme))
+            for (const row of rows) {
+                const s = (subjectStats[row.subject] ??= { score: 0, total: 0 })
+                s.score += row.score
+                s.total += row.total
+            }
+        }
 
         // Safe access to batch info
         const userWithBatches = user as any
@@ -67,9 +81,9 @@ export async function POST(req: Request) {
             },
             subjectPerformance: Object.entries(subjectStats).map(([subj, val]) => ({
                 subject: subj,
-                accuracy: val.total > 0 ? Math.round((val.score / val.total) * 100) : 0
+                accuracy: val.total > 0 ? Math.max(0, Math.round((val.score / val.total) * 100)) : 0
             })),
-            recentHistory: results.slice(0, 5).map((r: any) => ({
+            recentHistory: results.slice(0, 20).map(r => ({
                 test: r.test.title,
                 score: r.score,
                 total: r.total,

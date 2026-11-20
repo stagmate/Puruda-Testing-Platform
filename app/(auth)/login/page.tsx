@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useState } from "react"
+import { BrandLogo } from "@/components/brand"
 import { signIn } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { END_MESSAGES, type EndReason } from "@/lib/session-policy"
@@ -85,7 +86,7 @@ function LoginForm() {
         <div className="flex min-h-screen items-center justify-center p-4 bg-slate-50">
             <Card className="w-full max-w-sm shadow-xl">
                 <CardHeader>
-                    <CardTitle className="text-2xl text-center">Puruda Platform</CardTitle>
+                    <CardTitle className="flex justify-center"><BrandLogo className="h-12" priority /><span className="sr-only">Rankify.me</span></CardTitle>
                     <CardDescription className="text-center">Sign in to your account</CardDescription>
                 </CardHeader>
                 <CardContent>

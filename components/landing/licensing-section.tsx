@@ -40,7 +40,7 @@ export function LicensingSection() {
                 "Up to 1,500 Active Enrolled Students",
                 "Unlimited Course Batches & Sections",
                 "Strict Fullscreen Anti-Cheat Proctoring",
-                "24/7 Puruda AI Tutor & Problem Explainer",
+                "24/7 Rankify.me AI Tutor & Problem Explainer",
                 "Live All-India / All-Institute Leaderboards",
                 "Teacher Assignment & Progress Review Roles",
                 "Automated PDF Parent Report Cards",

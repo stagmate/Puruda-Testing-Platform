@@ -116,7 +116,7 @@ export function InteractiveExamPreview() {
                         </span>
                     </h2>
                     <p className="text-base md:text-lg text-slate-600">
-                        See why coaching institutes and universities trust Puruda. Test-drive the real student examination console, live proctoring safeguards, and diagnostic scoreboards below.
+                        See why coaching institutes and universities trust Rankify.me. Test-drive the real student examination console, live proctoring safeguards, and diagnostic scoreboards below.
                     </p>
                 </div>
 
@@ -172,7 +172,7 @@ export function InteractiveExamPreview() {
                                             LIVE TEST
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400">Batch: Morning Super-30 • Puruda Coaching Academy</p>
+                                    <p className="text-xs text-slate-400">Batch: Morning Super-30 • Rankify.me Demo Academy</p>
                                 </div>
                             </div>
 
@@ -258,7 +258,7 @@ export function InteractiveExamPreview() {
                                         <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl space-y-2 text-sm text-emerald-950 animate-in fade-in duration-300">
                                             <div className="flex items-center gap-2 font-bold text-emerald-800">
                                                 <Sparkles className="h-4 w-4 text-emerald-600" />
-                                                Puruda AI Step-by-Step Solution:
+                                                Rankify.me AI Step-by-Step Solution:
                                             </div>
                                             <p className="leading-relaxed text-xs sm:text-sm text-emerald-900">
                                                 {currentQ.explanation}
