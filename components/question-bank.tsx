@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Plus, Library, PencilLine, FileUp, Table2 } from "lucide-react"
+import { Plus, Library, PencilLine, FileUp, Table2, PackageOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,6 +13,7 @@ import { Repository, type BankFilters } from "@/components/question-bank/reposit
 import { AddQuestion } from "@/components/question-bank/add-question"
 import { PdfImport } from "@/components/question-bank/pdf-import"
 import { CsvUpload } from "@/components/question-bank/csv-upload"
+import { PackImport } from "@/components/question-bank/pack-import"
 import { cleanContext } from "@/lib/question-context"
 
 type Named = { id: string; name: string }
@@ -130,12 +131,24 @@ export function QuestionBankManagement() {
                         <TabsTrigger value="add"><PencilLine className="mr-1.5 h-4 w-4" />Add</TabsTrigger>
                         <TabsTrigger value="pdf"><FileUp className="mr-1.5 h-4 w-4" />Import PDF</TabsTrigger>
                         <TabsTrigger value="csv"><Table2 className="mr-1.5 h-4 w-4" />CSV</TabsTrigger>
+                        <TabsTrigger value="pack"><PackageOpen className="mr-1.5 h-4 w-4" />Import pack</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="repository"><Repository filters={filters} refreshKey={refreshKey} /></TabsContent>
                     <TabsContent value="add"><AddQuestion context={context} contextLabel={contextLabel} onSaved={saved} /></TabsContent>
                     <TabsContent value="pdf"><PdfImport context={context} contextLabel={contextLabel} onSaved={saved} /></TabsContent>
                     <TabsContent value="csv"><CsvUpload context={context} contextLabel={contextLabel} onSaved={saved} /></TabsContent>
+                    <TabsContent value="pack">
+                        <PackImport
+                            courses={courses}
+                            batches={batches}
+                            subjects={subjects}
+                            defaultCourseId={filters.courseId}
+                            defaultBatchId={filters.batchId}
+                            onSaved={saved}
+                            onSubjectsChanged={async () => applyMeta(await fetchMeta())}
+                        />
+                    </TabsContent>
                 </Tabs>
 
                 <Dialog open={!!creating} onOpenChange={o => { if (!o) { setCreating(null); setCreateError("") } }}>

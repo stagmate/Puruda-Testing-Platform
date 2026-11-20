@@ -2,7 +2,7 @@
 // CSV, test-creation quick add) into the fields stored on the Question model.
 // Shared by the API routes and the browser (for showing problems before saving).
 
-import { OPTION_LETTERS, correctOptionIndexes, resolveOptionIndex } from "@/lib/grading"
+import { OPTION_LETTERS, correctOptionIndexes, parseNumericAnswer, resolveOptionIndex } from "@/lib/grading"
 
 export const QUESTION_TYPES = ["SINGLE", "MULTIPLE", "INTEGER"] as const
 export type QuestionType = (typeof QUESTION_TYPES)[number]
@@ -101,14 +101,15 @@ export function normalizeQuestion(raw: Record<string, unknown>): { fields?: Ques
     }
 
     if (type === "INTEGER") {
-        if (tokens.length !== 1 || !Number.isFinite(parseFloat(tokens[0]))) {
-            return { error: "Integer questions need a numeric answer" }
+        const range = tokens.length === 1 ? parseNumericAnswer(tokens[0]) : null
+        if (!range) {
+            return { error: "Numeric questions need a number (e.g. 12 or 2.5) or a range (e.g. 8.80 to 9.40)" }
         }
         return {
             fields: {
                 ...base,
                 options: "[]",
-                correct: tokens[0],
+                correct: range.min === range.max ? tokens[0].trim() : `${tokens[0].trim().split(/\s*(?:to|–|—|\.\.)\s*/i).join(" to ")}`,
                 optionAImageUrl: null, optionBImageUrl: null, optionCImageUrl: null, optionDImageUrl: null,
                 hasDiagram: !!imageUrl,
             },

@@ -37,7 +37,10 @@ describe("normalizeQuestion", () => {
 
     it("validates INTEGER answers", () => {
         expect(normalizeQuestion({ type: "INTEGER", text: "pH?", correct: "4" }).fields!.correct).toBe("4")
-        expect(normalizeQuestion({ type: "INTEGER", text: "pH?", correct: "four" }).error).toMatch(/numeric/)
+        expect(normalizeQuestion({ type: "INTEGER", text: "pH?", correct: "four" }).error).toMatch(/number/)
+        expect(normalizeQuestion({ type: "INTEGER", text: "g?", correct: "8.80 to 9.40" }).fields?.correct).toBe("8.80 to 9.40")
+        expect(normalizeQuestion({ type: "INTEGER", text: "g?", correct: "8.8..9.4" }).fields?.correct).toBe("8.8 to 9.4")
+        expect(normalizeQuestion({ type: "INTEGER", text: "g?", correct: "9 to 8" }).error).toBeTruthy()
     })
 
     it("rejects bad input", () => {

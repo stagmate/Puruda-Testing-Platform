@@ -31,6 +31,32 @@ export function parseOptions(options: string | string[]): string[] {
 
 const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase()
 
+const NUM = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)`
+const SINGLE_NUM = new RegExp(`^${NUM}$`)
+const RANGE = new RegExp(`^(${NUM})\\s*(?:to|–|—|\\.\\.)\\s*(${NUM})$`, "i")
+
+/** Tolerance for single-value numeric answers: anything that rounds to the key at two decimals (JEE keys are given to 2 dp). */
+export const NUMERIC_TOLERANCE = 0.005
+
+/**
+ * Parse a stored numeric answer: a single value ("12", "-2.5") or an inclusive
+ * range ("8.80 to 9.40", as JEE answer keys give for decimal answers).
+ * Returns null if it isn't numeric.
+ */
+export function parseNumericAnswer(value: string): { min: number; max: number } | null {
+    const s = String(value ?? "").trim()
+    if (SINGLE_NUM.test(s)) {
+        const v = parseFloat(s)
+        return { min: v, max: v }
+    }
+    const m = s.match(RANGE)
+    if (m) {
+        const a = parseFloat(m[1]), b = parseFloat(m[2])
+        return a <= b ? { min: a, max: b } : null
+    }
+    return null
+}
+
 /** Map one stored answer token to an option index, or -1 if it can't be resolved. */
 export function resolveOptionIndex(token: string, options: string[]): number {
     const raw = String(token).trim()
@@ -91,12 +117,16 @@ export function isAnswerCorrect(question: GradableQuestion, answer: unknown): bo
 
     if (type === "INTEGER") {
         if (typeof answer !== "string" && typeof answer !== "number") return false
-        const userVal = parseFloat(String(answer))
-        const correctVal = parseFloat(correct)
-        if (!isNaN(userVal) && !isNaN(correctVal)) {
-            return Math.abs(userVal - correctVal) < 0.01
+        const typed = String(answer).trim()
+        const expected = parseNumericAnswer(correct)
+        if (expected && SINGLE_NUM.test(typed)) {
+            const v = parseFloat(typed)
+            if (expected.min === expected.max) return Math.abs(v - expected.min) < NUMERIC_TOLERANCE
+            // Ranges are inclusive; the epsilon absorbs floating-point noise at the ends.
+            return v >= expected.min - 1e-9 && v <= expected.max + 1e-9
         }
-        return norm(String(answer)) === norm(correct)
+        if (expected) return false
+        return norm(typed) === norm(correct)
     }
 
     if (type === "MULTIPLE") {

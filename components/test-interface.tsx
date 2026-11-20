@@ -319,7 +319,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     </h2>
                     {question.imageUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={question.imageUrl} alt="Question diagram" className="mb-8 max-h-72 rounded border" />
+                        <img src={question.imageUrl} alt="Question diagram" className="mb-8 h-auto max-h-[75vh] w-auto max-w-full rounded border bg-white object-contain" />
                     )}
 
                     {qType === "INTEGER" ? (

@@ -18,6 +18,9 @@ type StoredQuestion = Parameters<typeof draftFromQuestion>[0] & {
     subject?: { name: string } | null
     chapter?: { name: string } | null
     subtopic?: { name: string } | null
+    course?: { name: string } | null
+    batch?: { name: string } | null
+    examTag?: string | null
     _count?: { tests: number }
 }
 
@@ -88,7 +91,7 @@ export function Repository({ filters, refreshKey }: { filters: BankFilters; refr
             <div className="flex flex-col gap-2 sm:flex-row">
                 <div className="relative flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search question text…" className="pl-8" aria-label="Search questions" />
+                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search questions or paper name…" className="pl-8" aria-label="Search questions" />
                 </div>
                 <Select value={type || "all"} onValueChange={v => setType(v === "all" ? "" : v)}>
                     <SelectTrigger className="sm:w-48" aria-label="Question type"><SelectValue /></SelectTrigger>
@@ -117,6 +120,9 @@ export function Repository({ filters, refreshKey }: { filters: BankFilters; refr
                                     {q.subject && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-800">{q.subject.name}</span>}
                                     {q.chapter && <span className="rounded bg-purple-50 px-1.5 py-0.5 text-purple-800">{q.chapter.name}</span>}
                                     {q.subtopic && <span className="rounded bg-pink-50 px-1.5 py-0.5 text-pink-800">{q.subtopic.name}</span>}
+                                    {q.batch && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800">{q.course ? `${q.course.name} › ` : ""}{q.batch.name}</span>}
+                                    {!q.batch && q.course && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800">{q.course.name}</span>}
+                                    {q.examTag && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">{q.examTag}</span>}
                                     {!!q._count?.tests && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">In {q._count.tests} test{q._count.tests === 1 ? "" : "s"}</span>}
                                 </div>
                                 <div className="flex gap-1">
