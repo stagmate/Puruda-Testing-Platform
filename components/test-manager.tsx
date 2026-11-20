@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { CalendarClock, Send, Eye, EyeOff, Loader2, Printer, Settings2, Trash2 } from "lucide-react"
+import { CalendarClock, Send, Eye, Award, Lock, EyeOff, Loader2, Printer, Settings2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,6 +19,8 @@ export type ManagedTest = {
     startTime: string | null
     endTime: string | null
     markingScheme: string | null
+    resultMode?: string
+    resultsReleasedAt?: string | null
     course?: { name: string } | null
     batches: { id?: string; name: string }[]
     _count: { questions: number; results?: number }
@@ -124,6 +126,25 @@ export function TestList({ tests, batches, onChanged, canDelete }: { tests: Mana
                             <span className={cn("shrink-0 rounded px-2 py-0.5 text-xs font-semibold", status.style)} title={status.detail}>{status.label}</span>
                         </div>
                         <p className="mt-1 text-xs text-slate-600">{status.detail}</p>
+                        {t.resultMode === "MANUAL" && (
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-2.5 py-1.5">
+                                <span className={cn("flex items-center gap-1.5 text-xs font-medium", t.resultsReleasedAt ? "text-emerald-700" : "text-amber-800")}>
+                                    {t.resultsReleasedAt ? <Award className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                                    {t.resultsReleasedAt
+                                        ? `Results released ${new Date(t.resultsReleasedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
+                                        : `Results hidden from students${results ? ` (${results} submitted)` : ""}`}
+                                </span>
+                                <Button
+                                    size="sm"
+                                    variant={t.resultsReleasedAt ? "outline" : "default"}
+                                    className={cn("h-7", !t.resultsReleasedAt && "bg-emerald-600 hover:bg-emerald-700")}
+                                    disabled={busyId === t.id}
+                                    onClick={() => patch(t, { releaseResults: !t.resultsReleasedAt })}
+                                >
+                                    {t.resultsReleasedAt ? "Hide results" : "Release results"}
+                                </Button>
+                            </div>
+                        )}
                         <div className="mt-2 flex flex-wrap items-center justify-end gap-1">
                             <Button variant={t.isPublished ? "outline" : "default"} size="sm" onClick={() => setReleasing(t)}>
                                 <Send className="mr-1.5 h-4 w-4" />{t.isPublished ? "Batches" : "Release"}
@@ -170,6 +191,7 @@ function TestSettingsDialog({ test, onClose, onSave }: { test: ManagedTest; onCl
     const [end, setEnd] = useState(toLocalInput(test.endTime))
     const original = parseScheme(test.markingScheme)
     const [scheme, setScheme] = useState<MarkingScheme>(original)
+    const [resultMode, setResultMode] = useState(test.resultMode === "MANUAL" ? "MANUAL" : "INSTANT")
     const [saving, setSaving] = useState(false)
     const results = test._count.results ?? 0
     const markingChanged = JSON.stringify(scheme) !== JSON.stringify(original)
@@ -181,6 +203,7 @@ function TestSettingsDialog({ test, onClose, onSave }: { test: ManagedTest; onCl
             startTime: fromLocalInput(start),
             endTime: fromLocalInput(end),
             ...(markingChanged ? { marking: scheme } : {}),
+            ...(resultMode !== (test.resultMode ?? "INSTANT") ? { resultMode } : {}),
         })
         setSaving(false)
         if (ok) onClose()
@@ -206,6 +229,16 @@ function TestSettingsDialog({ test, onClose, onSave }: { test: ManagedTest; onCl
                         <Label htmlFor="closes">Closes (optional)</Label>
                         <Input id="closes" type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} />
                     </div>
+                </div>
+                <div className="space-y-1">
+                    <Label>Results</Label>
+                    <Select value={resultMode} onValueChange={setResultMode} disabled={saving}>
+                        <SelectTrigger aria-label="Result mode"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="INSTANT">Instant: students see their marks on submitting</SelectItem>
+                            <SelectItem value="MANUAL">Manual: hidden until you release them</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
                 <div className="space-y-1">
                     <Label>Marking</Label>

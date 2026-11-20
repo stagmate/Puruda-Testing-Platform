@@ -12,7 +12,8 @@ const parseTime = (v: unknown): Date | null | undefined => {
     return isNaN(d.getTime()) ? undefined : d
 }
 
-// Publish/unpublish, reschedule or change the marking of a test. A new marking
+// Publish/unpublish, reschedule, change the marking or release the results of a
+// test (manual-release mode). A new marking
 // scheme re-scores every result already submitted, from the saved answers.
 export async function PATCH(req: Request, { params }: Params) {
     const auth = await requireRole(STAFF)
@@ -27,9 +28,18 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const data: {
         isPublished?: boolean; startTime?: Date | null; endTime?: Date | null; markingScheme?: string
+        resultMode?: string; resultsReleasedAt?: Date | null
         batches?: { set: { id: string }[] }
     } = {}
     if (typeof body.isPublished === "boolean") data.isPublished = body.isPublished
+
+    // Results: instant, or manual (hidden until released). releaseResults
+    // shows or hides a manual test's marks to students.
+    if (body.resultMode !== undefined) {
+        if (body.resultMode !== "INSTANT" && body.resultMode !== "MANUAL") return new NextResponse("Invalid result mode", { status: 400 })
+        data.resultMode = body.resultMode
+    }
+    if (typeof body.releaseResults === "boolean") data.resultsReleasedAt = body.releaseResults ? new Date() : null
 
     for (const key of ["startTime", "endTime"] as const) {
         if (key in body) {
