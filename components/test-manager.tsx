@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { CalendarClock, Eye, EyeOff, Loader2, Printer, Settings2, Trash2 } from "lucide-react"
+import { CalendarClock, Send, Eye, EyeOff, Loader2, Printer, Settings2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,9 +20,11 @@ export type ManagedTest = {
     endTime: string | null
     markingScheme: string | null
     course?: { name: string } | null
-    batches: { name: string }[]
+    batches: { id?: string; name: string }[]
     _count: { questions: number; results?: number }
 }
+
+export type ReleaseBatch = { id: string; name: string; course?: { name: string } | null; _count?: { students: number } }
 
 const CUSTOM = "CUSTOM"
 
@@ -84,11 +86,12 @@ export function MarkingFields({ value, onChange, disabled }: { value: MarkingSch
 }
 
 /** List of tests with their status, and the actions to publish, schedule, mark and delete them. */
-export function TestList({ tests, onChanged, canDelete }: { tests: ManagedTest[]; onChanged: () => void; canDelete: boolean }) {
+export function TestList({ tests, batches, onChanged, canDelete }: { tests: ManagedTest[]; batches: ReleaseBatch[]; onChanged: () => void; canDelete: boolean }) {
     const [busyId, setBusyId] = useState<string | null>(null)
     const [error, setError] = useState("")
     const [editing, setEditing] = useState<ManagedTest | null>(null)
     const [deleting, setDeleting] = useState<ManagedTest | null>(null)
+    const [releasing, setReleasing] = useState<ManagedTest | null>(null)
 
     const patch = async (t: ManagedTest, body: Record<string, unknown>) => {
         setBusyId(t.id)
@@ -122,7 +125,10 @@ export function TestList({ tests, onChanged, canDelete }: { tests: ManagedTest[]
                         </div>
                         <p className="mt-1 text-xs text-slate-600">{status.detail}</p>
                         <div className="mt-2 flex flex-wrap items-center justify-end gap-1">
-                            <Button variant={t.isPublished ? "outline" : "default"} size="sm" disabled={busyId === t.id} onClick={() => patch(t, { isPublished: !t.isPublished })}>
+                            <Button variant={t.isPublished ? "outline" : "default"} size="sm" onClick={() => setReleasing(t)}>
+                                <Send className="mr-1.5 h-4 w-4" />{t.isPublished ? "Batches" : "Release"}
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={busyId === t.id} onClick={() => patch(t, { isPublished: !t.isPublished })}>
                                 {busyId === t.id ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : t.isPublished ? <EyeOff className="mr-1.5 h-4 w-4" /> : <Eye className="mr-1.5 h-4 w-4" />}
                                 {t.isPublished ? "Unpublish" : "Publish"}
                             </Button>
@@ -152,6 +158,7 @@ export function TestList({ tests, onChanged, canDelete }: { tests: ManagedTest[]
             })}
 
             {editing && <TestSettingsDialog test={editing} onClose={() => setEditing(null)} onSave={body => patch(editing, body)} />}
+            {releasing && <ReleaseDialog test={releasing} batches={batches} onClose={() => setReleasing(null)} onSave={body => patch(releasing, body)} />}
             {deleting && <DeleteTestDialog test={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); onChanged() }} />}
         </div>
     )
@@ -239,6 +246,104 @@ function DeleteTestDialog({ test, onClose, onDeleted }: { test: ManagedTest; onC
                 </DialogHeader>
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 <Button variant="destructive" onClick={remove} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete test</Button>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+/** Choose the batches that can take a test, when it opens, and publish it. */
+function ReleaseDialog({ test, batches, onClose, onSave }: {
+    test: ManagedTest
+    batches: ReleaseBatch[]
+    onClose: () => void
+    onSave: (body: Record<string, unknown>) => Promise<boolean>
+}) {
+    const current = new Set(test.batches.map(b => b.id).filter((id): id is string => !!id))
+    const [chosen, setChosen] = useState<Set<string>>(current)
+    const [everyone, setEveryone] = useState(test.isPublished && current.size === 0)
+    // Opens later only if its start time is still ahead (worked out once, when the dialog opens).
+    const [opensLater, setOpensLater] = useState(() => !!test.startTime && new Date(test.startTime).getTime() > Date.now())
+    const [start, setStart] = useState(() => (opensLater ? toLocalInput(test.startTime) : ""))
+    const [end, setEnd] = useState(toLocalInput(test.endTime))
+    const [saving, setSaving] = useState(false)
+
+    const picked = batches.filter(b => chosen.has(b.id))
+    const studentCount = picked.reduce((n, b) => n + (b._count?.students ?? 0), 0)
+    const empty = picked.filter(b => (b._count?.students ?? 0) === 0)
+    const ready = (everyone || chosen.size > 0) && (!opensLater || !!start)
+
+    const release = async () => {
+        setSaving(true)
+        const ok = await onSave({
+            batchIds: everyone ? [] : Array.from(chosen),
+            isPublished: true,
+            startTime: opensLater ? fromLocalInput(start) : null,
+            endTime: fromLocalInput(end),
+        })
+        setSaving(false)
+        if (ok) onClose()
+    }
+
+    return (
+        <Dialog open onOpenChange={o => { if (!o && !saving) onClose() }}>
+            <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2"><Send className="h-5 w-5" />Release {test.title}</DialogTitle>
+                    <DialogDescription>Students in the chosen batches will see this test on their dashboard.</DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-1.5">
+                    <Label>Batches</Label>
+                    <ul className="max-h-56 divide-y overflow-y-auto rounded-md border">
+                        {batches.length === 0 && <li className="p-3 text-sm text-slate-500">No batches yet. Create one under Courses &amp; Batches.</li>}
+                        {batches.map(b => {
+                            const n = b._count?.students ?? 0
+                            return (
+                                <li key={b.id}>
+                                    <label className={cn("flex cursor-pointer items-center gap-2 px-3 py-2 text-sm", everyone && "opacity-50")}>
+                                        <Checkbox
+                                            checked={!everyone && chosen.has(b.id)}
+                                            disabled={everyone || saving}
+                                            aria-label={b.name}
+                                            onCheckedChange={on => setChosen(c => { const next = new Set(c); if (on === true) next.add(b.id); else next.delete(b.id); return next })}
+                                        />
+                                        <span className="flex-1">{b.name}{b.course ? <span className="text-slate-500"> · {b.course.name}</span> : null}</span>
+                                        <span className={cn("text-xs", n === 0 ? "font-medium text-amber-700" : "text-slate-500")}>{n} student{n === 1 ? "" : "s"}</span>
+                                    </label>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                    <label className="flex items-center gap-2 pt-1 text-sm">
+                        <Checkbox checked={everyone} onCheckedChange={v => setEveryone(v === true)} disabled={saving} />
+                        All students (any batch)
+                    </label>
+                    {!everyone && empty.length > 0 && (
+                        <p className="text-sm text-amber-800">
+                            {empty.map(b => b.name).join(", ")} {empty.length === 1 ? "has" : "have"} no students yet. Add them under Courses &amp; Batches → Batch Students, or they won&apos;t see the test.
+                        </p>
+                    )}
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Opens</Label>
+                    <div className="flex flex-wrap gap-4 text-sm">
+                        <label className="flex items-center gap-2"><input type="radio" name="opens" checked={!opensLater} onChange={() => setOpensLater(false)} disabled={saving} />Now</label>
+                        <label className="flex items-center gap-2"><input type="radio" name="opens" checked={opensLater} onChange={() => setOpensLater(true)} disabled={saving} />At a set time</label>
+                    </div>
+                    {opensLater && <Input type="datetime-local" aria-label="Opens at" value={start} onChange={e => setStart(e.target.value)} disabled={saving} />}
+                </div>
+                <div className="space-y-1">
+                    <Label htmlFor="release-closes">Closes (optional)</Label>
+                    <Input id="release-closes" type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} disabled={saving} />
+                </div>
+
+                <Button onClick={release} disabled={saving || !ready}>
+                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {everyone
+                        ? `Release to all students${opensLater ? "" : " now"}`
+                        : `Release to ${picked.length || "…"} batch${picked.length === 1 ? "" : "es"} (${studentCount} student${studentCount === 1 ? "" : "s"})${opensLater ? "" : " now"}`}
+                </Button>
             </DialogContent>
         </Dialog>
     )

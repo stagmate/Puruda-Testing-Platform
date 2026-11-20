@@ -25,7 +25,10 @@ export async function PATCH(req: Request, { params }: Params) {
     const test = await db.test.findUnique({ where: { id }, select: { id: true, startTime: true, endTime: true } })
     if (!test) return new NextResponse("Test not found", { status: 404 })
 
-    const data: { isPublished?: boolean; startTime?: Date | null; endTime?: Date | null; markingScheme?: string } = {}
+    const data: {
+        isPublished?: boolean; startTime?: Date | null; endTime?: Date | null; markingScheme?: string
+        batches?: { set: { id: string }[] }
+    } = {}
     if (typeof body.isPublished === "boolean") data.isPublished = body.isPublished
 
     for (const key of ["startTime", "endTime"] as const) {
@@ -38,6 +41,18 @@ export async function PATCH(req: Request, { params }: Params) {
     const start = data.startTime !== undefined ? data.startTime : test.startTime
     const end = data.endTime !== undefined ? data.endTime : test.endTime
     if (start && end && end <= start) return new NextResponse("End time must be after start time", { status: 400 })
+
+    // Which batches can take the test. An empty list opens it to every student.
+    if (body.batchIds !== undefined) {
+        if (!Array.isArray(body.batchIds) || body.batchIds.some((b: unknown) => typeof b !== "string")) {
+            return new NextResponse("Invalid batches", { status: 400 })
+        }
+        const ids = Array.from(new Set(body.batchIds as string[]))
+        if (ids.length && (await db.batch.count({ where: { id: { in: ids } } })) !== ids.length) {
+            return new NextResponse("One of the batches no longer exists", { status: 400 })
+        }
+        data.batches = { set: ids.map(b => ({ id: b })) }
+    }
 
     if (body.marking !== undefined) data.markingScheme = JSON.stringify(normalizeScheme(body.marking))
 
