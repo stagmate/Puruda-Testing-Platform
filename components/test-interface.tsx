@@ -208,18 +208,17 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     }, [warnings, handleSubmit])
 
     // Leaving mid-test: the browser Back button asks first (a history entry is
-    // pushed so Back lands here instead of leaving), and reload/close warns too.
-    const leavingRef = useRef(false)
+    // pushed so Back lands here instead of leaving) and exiting submits the test;
+    // reload/close gets the browser's own leave-page warning.
     useEffect(() => {
         if (!test || completed) return
         window.history.pushState({ testGuard: true }, "")
         const onPopState = () => {
-            if (leavingRef.current) return
             window.history.pushState({ testGuard: true }, "")
             setExitPrompt(true)
         }
         const onBeforeUnload = (e: BeforeUnloadEvent) => {
-            if (leavingRef.current || completedRef.current) return
+            if (completedRef.current) return
             e.preventDefault()
             e.returnValue = ""
         }
@@ -231,11 +230,11 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
         }
     }, [test, completed])
 
-    const exitTest = () => {
-        leavingRef.current = true
+    // Exiting submits what the student has done so far, so the attempt is
+    // recorded and scored (the "open every question" rule doesn't apply).
+    const exitTest = async () => {
         setExitPrompt(false)
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => { })
-        onComplete?.()
+        await handleSubmit()
     }
 
     const goTo = (i: number) => {
@@ -539,13 +538,13 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     onClose={() => setExitPrompt(false)}
                     actions={<>
                         <Button onClick={() => setExitPrompt(false)}>Stay in the test</Button>
-                        <Button variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" onClick={exitTest}>
-                            <LogOut className="mr-1.5 h-4 w-4" />Exit test
+                        <Button variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" disabled={submitting} onClick={exitTest}>
+                            {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <LogOut className="mr-1.5 h-4 w-4" />}Submit &amp; exit
                         </Button>
                     </>}
                 >
-                    <p>You are leaving the test. Your answers have <b>not</b> been submitted and will be lost.</p>
-                    <p>The timer keeps running while you are away.</p>
+                    <p>If you exit now, your test is <b>submitted</b> with the answers you have given so far ({progress.answered} of {progress.total} answered) and your score is recorded.</p>
+                    <p>You won&apos;t be able to take this test again.</p>
                 </Prompt>
             )}
         </div>
