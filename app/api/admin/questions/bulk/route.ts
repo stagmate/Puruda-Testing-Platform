@@ -26,13 +26,23 @@ export async function POST(req: Request) {
         }
 
         const rows: Prisma.QuestionCreateManyInput[] = []
+        // Rows share one insert, so give them distinct timestamps that keep the upload
+        // order when the bank lists newest first (first row = newest).
+        const now = Date.now()
         const problems: string[] = []
         questions.forEach((q: Record<string, unknown>, i: number) => {
             // CSV rows use optionA..optionD; editor/PDF rows use an options array
             const input = Array.isArray(q?.options) ? q : { ...q, options: [q?.optionA, q?.optionB, q?.optionC, q?.optionD] }
             const { fields, error } = normalizeQuestion(input ?? {})
             if (error || !fields) problems.push(`Question ${i + 1}: ${error}`)
-            else rows.push({ ...fields, ...context, examTag: typeof q.examTag === "string" ? q.examTag : null })
+            else rows.push({
+                ...fields,
+                ...context,
+                // A question pack spans several subjects, so a row may name its own subject.
+                ...(typeof q.subjectId === "string" && q.subjectId ? { subjectId: q.subjectId, chapterId: null, subtopicId: null } : {}),
+                examTag: typeof q.examTag === "string" ? q.examTag.trim().slice(0, 200) || null : null,
+                createdAt: new Date(now - i),
+            })
         })
 
         if (problems.length > 0) {

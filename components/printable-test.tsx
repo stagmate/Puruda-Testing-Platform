@@ -79,7 +79,7 @@ export function PrintableTest({ test, mode }: PrintableTestProps) {
 
                                         {q.imageUrl && (
                                             <div className="my-2 p-2 border border-slate-200 inline-block">
-                                                <img src={q.imageUrl} alt="Question Diagram" className="max-h-40 object-contain" />
+                                                <img src={q.imageUrl} alt="Question Diagram" className="h-auto max-h-[9in] w-auto max-w-full object-contain" />
                                             </div>
                                         )}
 

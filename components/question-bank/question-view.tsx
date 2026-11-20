@@ -35,7 +35,7 @@ export function QuestionView({ draft, number, showAnswer = true, showSolution = 
 
             {draft.imageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={draft.imageUrl} alt="Question diagram" className="max-h-64 max-w-full rounded border bg-white object-contain" />
+                <img src={draft.imageUrl} alt="Question diagram" className="h-auto max-h-[36rem] w-auto max-w-full rounded border bg-white object-contain" />
             )}
 
             {draft.type === "INTEGER" ? (

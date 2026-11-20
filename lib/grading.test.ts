@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isAnswerCorrect, gradeTest, resolveOptionIndex } from "./grading"
+import { isAnswerCorrect, gradeTest, resolveOptionIndex, parseNumericAnswer } from "./grading"
 
 const opts = JSON.stringify(["Newton", "Joule", "Watt", "Pascal"])
 
@@ -48,12 +48,42 @@ describe("isAnswerCorrect", () => {
         expect(isAnswerCorrect(q, "10")).toBe(false)
     })
 
+    it("accepts decimals written differently", () => {
+        const q = { type: "INTEGER", options: "[]", correct: "2.00" }
+        expect(isAnswerCorrect(q, "2")).toBe(true)
+        expect(isAnswerCorrect(q, " 2.0 ")).toBe(true)
+        expect(isAnswerCorrect(q, "2.01")).toBe(false)
+        expect(isAnswerCorrect(q, "2abc")).toBe(false)
+    })
+
+    it("grades numeric ranges inclusively", () => {
+        const q = { type: "INTEGER", options: "[]", correct: "8.80 to 9.40" }
+        expect(isAnswerCorrect(q, "8.8")).toBe(true)
+        expect(isAnswerCorrect(q, "9.1")).toBe(true)
+        expect(isAnswerCorrect(q, "9.40")).toBe(true)
+        expect(isAnswerCorrect(q, "8.79")).toBe(false)
+        expect(isAnswerCorrect(q, "9.41")).toBe(false)
+        expect(isAnswerCorrect({ type: "INTEGER", options: "[]", correct: "1336.03 to 1336.04" }, "1336.035")).toBe(true)
+    })
+
     it("treats blank or malformed answers as wrong without throwing", () => {
         const q = { type: "SINGLE", options: opts, correct: "Newton" }
         expect(isAnswerCorrect(q, undefined)).toBe(false)
         expect(isAnswerCorrect(q, null)).toBe(false)
         expect(isAnswerCorrect(q, { hack: true })).toBe(false)
         expect(isAnswerCorrect(q, 99)).toBe(false)
+    })
+})
+
+describe("parseNumericAnswer", () => {
+    it("reads values and ranges", () => {
+        expect(parseNumericAnswer("12")).toEqual({ min: 12, max: 12 })
+        expect(parseNumericAnswer("-2.5")).toEqual({ min: -2.5, max: -2.5 })
+        expect(parseNumericAnswer("5.26 to 5.27")).toEqual({ min: 5.26, max: 5.27 })
+        expect(parseNumericAnswer("-3 to -1")).toEqual({ min: -3, max: -1 })
+        expect(parseNumericAnswer("9 to 8")).toBeNull()
+        expect(parseNumericAnswer("four")).toBeNull()
+        expect(parseNumericAnswer("")).toBeNull()
     })
 })
 
