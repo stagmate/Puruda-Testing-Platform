@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole } from "@/lib/api-auth"
-import { gradeTest } from "@/lib/grading"
+import { gradeWithScheme, parseScheme } from "@/lib/marking"
 import { attemptDeadline, studentAccessError, SUBMIT_GRACE_MS } from "@/lib/test-access"
 
 export async function POST(req: Request) {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
             return new NextResponse("Time limit exceeded", { status: 403 })
         }
 
-        const { score, total } = gradeTest(test.questions, responses)
+        const { score, total } = gradeWithScheme(test.questions, responses, parseScheme(test.markingScheme))
 
         // Mark the attempt submitted and save the result together. The submittedAt
         // check inside the transaction stops a double-click from saving two results.

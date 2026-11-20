@@ -59,9 +59,11 @@ describe("dataUrlBytes", () => {
 describe("pack tests", () => {
     it("reads tests and checks they point at a paper", () => {
         const base = pack([mcq, { ...mcq, paper: "JEE Advanced" }])
-        const ok = readPack({ ...base, tests: [{ title: "Main", paper: "JEE Main", duration: 180 }] })
+        const ok = readPack({ ...base, tests: [{ title: "Main", paper: "JEE Main", duration: 180, marking: "JEE_MAIN" }, { title: "Adv", paper: "JEE Advanced", duration: 180 }] })
         expect(ok.problems).toEqual([])
-        expect(ok.tests).toEqual([{ title: "Main", paper: "JEE Main", duration: 180 }])
+        expect(ok.tests[0]).toMatchObject({ title: "Main", paper: "JEE Main", duration: 180 })
+        expect(ok.tests[0].marking.single).toEqual({ correct: 4, wrong: -1 })
+        expect(ok.tests[1].marking.single).toEqual({ correct: 1, wrong: 0 })
         const bad = readPack({ ...base, tests: [{ title: "X", paper: "Nope", duration: 180 }, { title: "Y", paper: "JEE Main", duration: 0 }, { paper: "JEE Main", duration: 60 }] })
         expect(bad.problems).toHaveLength(3)
     })

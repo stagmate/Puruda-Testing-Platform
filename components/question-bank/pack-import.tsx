@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { matchExisting, readPack, toQuestionInput, type ReadPack } from "@/lib/question-pack"
+import { describeScheme } from "@/lib/marking"
 
 type Named = { id: string; name: string }
 type BatchRow = Named & { courseId: string }
@@ -56,6 +57,7 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
     const [courseId, setCourseId] = useState(defaultCourseId)
     const [batchId, setBatchId] = useState(defaultBatchId)
     const [makeTests, setMakeTests] = useState<boolean[]>([])
+    const [publishTests, setPublishTests] = useState(false)
     const [busy, setBusy] = useState(false)
     const [progress, setProgress] = useState("")
     const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -192,6 +194,7 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         title: t.title, duration: t.duration, type: "MOCK", questionIds,
+                        marking: t.marking, publish: publishTests,
                         courseId: courseId || null, batchIds: batchId ? [batchId] : [],
                     }),
                 })
@@ -204,7 +207,12 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
             const parts: string[] = []
             if (created) parts.push(`Imported ${plural(created, "question")}${where ? ` into ${where}` : ""}.`)
             if (inBank && made.length) parts.push(`Reused ${inBank} already in the bank.`)
-            if (made.length) parts.push(`Created ${made.length === 1 ? "the test" : "the tests"} ${made.join(" and ")}${batchId ? `, published to ${where}` : ", published to all students"}.`)
+            if (made.length) {
+                const audience = batchId ? where : "all students"
+                parts.push(publishTests
+                    ? `Created ${made.length === 1 ? "the test" : "the tests"} ${made.join(" and ")}, published to ${audience}.`
+                    : `Created ${made.length === 1 ? "the test" : "the tests"} ${made.join(" and ")} as drafts for ${audience}. Publish or schedule them under Tests.`)
+            }
             setMessage({ ok: true, text: parts.join(" ") })
             setPack(null)
             uploaded.current = new Map()
@@ -284,10 +292,21 @@ export function PackImport({ courses, batches, subjects, defaultCourseId, defaul
                                                 <span>
                                                     Create <span className="font-medium">{t.title}</span>
                                                     <span className="text-slate-500"> — {plural(pack.questions.filter(q => q.paper === t.paper).length, "question")} in paper order, {t.duration} min</span>
+                                                    <span className="block text-xs text-slate-500">Marking: {describeScheme(t.marking)}</span>
                                                 </span>
                                             </label>
                                         ))}
-                                        <p className="text-xs text-slate-500">Tests are published straight away to the batch chosen below (or to every student if no batch is chosen), like &quot;Create &amp; Publish Test&quot;.</p>
+                                        <label className="flex items-start gap-2 border-t pt-2 text-sm">
+                                            <Checkbox checked={publishTests} onCheckedChange={v => setPublishTests(v === true)} disabled={busy} className="mt-0.5" />
+                                            <span>
+                                                Publish now
+                                                <span className="block text-xs text-slate-500">
+                                                    {publishTests
+                                                        ? "Students in the batch chosen below (or every student, if no batch) can see the tests straight away."
+                                                        : "The tests are saved as drafts. Publish or schedule them under Tests when you're ready."}
+                                                </span>
+                                            </span>
+                                        </label>
                                     </div>
                                 )}
 

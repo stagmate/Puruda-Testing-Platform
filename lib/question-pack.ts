@@ -18,11 +18,13 @@
 //   "tests": [{                             // optional: tests built from the pack
 //     "title": "JEE Main Part Test-1",
 //     "paper": "JEE Main Part Test-1",      // which questions (by "paper"), in pack order
-//     "duration": 180                       // minutes
+//     "duration": 180,                      // minutes
+//     "marking": "JEE_MAIN"                 // optional: preset name or scheme object (lib/marking.ts)
 //   }]
 // }
 
 import { normalizeQuestion } from "@/lib/question-input"
+import { normalizeScheme, type MarkingScheme } from "@/lib/marking"
 
 export const PACK_FORMAT = "puruda-question-pack"
 export const MAX_PACK_IMAGE_BYTES = 5 * 1024 * 1024 // same limit as /api/upload
@@ -45,6 +47,7 @@ export type PackTest = {
     title: string
     paper: string
     duration: number
+    marking: MarkingScheme
 }
 
 const IMAGE_DATA_URL = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+=*)$/
@@ -113,7 +116,7 @@ export function readPack(raw: unknown): ReadPack {
         if (!title) return void problems.push(`${where}: no title`)
         if (!(duration > 0 && duration <= 24 * 60)) return void problems.push(`${where}: duration must be 1–1440 minutes`)
         if (!questions.some(q => q.paper === paper)) return void problems.push(`${where}: no questions for the paper "${paper}"`)
-        tests.push({ title, paper, duration })
+        tests.push({ title, paper, duration, marking: normalizeScheme(t.marking ?? "STANDARD") })
     })
 
     return { title: str(pack.title), questions, tests, problems }
