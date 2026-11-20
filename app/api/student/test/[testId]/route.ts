@@ -4,6 +4,8 @@ import { requireRole } from "@/lib/api-auth"
 import { parseOptions } from "@/lib/grading"
 import { attemptDeadline, studentAccessError } from "@/lib/test-access"
 import { orderTestQuestions } from "@/lib/test-order"
+import { finalizeExpiredAttempts } from "@/lib/finalize-attempts"
+import { cleanAnswers, cleanVisited, parseJson } from "@/lib/saved-answers"
 
 export async function GET(
     request: Request,
@@ -42,8 +44,14 @@ export async function GET(
         if (!test) return new NextResponse("Test not found", { status: 404 })
 
         let deadline: Date | null = null
+        let saved: { answers: Record<string, unknown>; visited: number[] } | null = null
 
         if (user.role === "STUDENT") {
+            // Time ran out after the student left: submit their saved answers.
+            if (await finalizeExpiredAttempts({ testId, userId: user.id })) {
+                return new NextResponse("Time is up. Your saved answers have been submitted.", { status: 409 })
+            }
+
             const denied = await studentAccessError(test, user.id)
             if (denied) return new NextResponse(denied.message, { status: denied.status })
 
@@ -60,6 +68,13 @@ export async function GET(
             if (deadline && Date.now() > deadline.getTime()) {
                 return new NextResponse("Your time for this test has run out", { status: 403 })
             }
+            // Answers saved earlier (reopened tab, reload, lost connection).
+            if (attempt.answersSavedAt) {
+                saved = {
+                    answers: cleanAnswers(parseJson(attempt.answers), new Set(test.questions.map(q => q.id))),
+                    visited: cleanVisited(parseJson(attempt.visited), test.questions.length),
+                }
+            }
         }
 
         return NextResponse.json({
@@ -69,6 +84,7 @@ export async function GET(
             duration: test.duration,
             deadline,
             serverNow: new Date(),
+            saved,
             questions: orderTestQuestions(test.questions, test.questionOrder).map(({ createdAt: _createdAt, subject, ...q }) => ({
                 ...q,
                 subject: subject?.name ?? null,

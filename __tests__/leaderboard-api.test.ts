@@ -20,6 +20,9 @@ vi.mock('@/lib/api-auth', async (importOriginal) => {
     }
 })
 
+// Finalising expired attempts is covered elsewhere; here it finds nothing to do.
+vi.mock('@/lib/finalize-attempts', () => ({ finalizeExpiredAttempts: vi.fn(async () => 0) }))
+
 // Mock the DB
 vi.mock('@/lib/db', () => ({
     db: {

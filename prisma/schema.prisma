@@ -184,6 +184,12 @@ model TestAttempt {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   startedAt   DateTime  @default(now())
   submittedAt DateTime?
+  // Saved while the student works (autosave), so a closed tab or lost
+  // connection doesn't lose answers. JSON: question id -> answer.
+  answers        String?
+  // JSON array of the question numbers (0-based) the student has opened.
+  visited        String?
+  answersSavedAt DateTime?
 
   @@unique([testId, userId])
 }

@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
 import { encodeQuestionOrder } from "@/lib/test-order"
 import { normalizeScheme } from "@/lib/marking"
+import { finalizeExpiredAttempts } from "@/lib/finalize-attempts"
 
 const TEST_TYPES = ["SUBJECT", "MIXED", "MOCK"]
 const RESULT_MODES = ["INSTANT", "MANUAL"]
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
 export async function GET() {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
+    await finalizeExpiredAttempts()
 
     const tests = await db.test.findMany({
         include: {
