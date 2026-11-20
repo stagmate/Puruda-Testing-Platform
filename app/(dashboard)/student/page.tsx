@@ -51,14 +51,16 @@ export default function StudentDashboard() {
     const firstName = session?.user?.name?.split(" ")[0]
 
     return (
-        <div className="mx-auto max-w-5xl space-y-8 p-4 sm:p-8">
+        <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-8">
             <div>
                 <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{firstName ? `Welcome, ${firstName}` : "Dashboard"}</h1>
                 <p className="mt-1 text-sm text-slate-500">Announcements from your institute and the tests open to you.</p>
             </div>
 
+            {/* Side by side on large screens, stacked (announcements first) on small ones */}
+            <div className="grid items-start gap-8 lg:grid-cols-2">
             {/* Announcements */}
-            <section aria-labelledby="announcements" className="space-y-3">
+            <section aria-labelledby="announcements" className="min-w-0 space-y-3">
                 <h2 id="announcements" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                     <Megaphone className="h-5 w-5 text-orange-500" />Announcements
                 </h2>
@@ -82,7 +84,7 @@ export default function StudentDashboard() {
             </section>
 
             {/* Available tests */}
-            <section aria-labelledby="tests" className="space-y-3">
+            <section aria-labelledby="tests" className="min-w-0 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id="tests" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                         <FileText className="h-5 w-5 text-indigo-600" />Available tests
@@ -90,15 +92,16 @@ export default function StudentDashboard() {
                     <Link href="/student/results" className="text-sm font-medium text-indigo-600 hover:underline">See my results →</Link>
                 </div>
                 {tests === null ? (
-                    <div className="grid gap-3 sm:grid-cols-2"><div className="h-28 animate-pulse rounded-xl bg-slate-100" /><div className="h-28 animate-pulse rounded-xl bg-slate-100" /></div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2"><div className="h-28 animate-pulse rounded-xl bg-slate-100" /><div className="h-28 animate-pulse rounded-xl bg-slate-100" /></div>
                 ) : tests.length === 0 ? (
                     <p className="rounded-xl border border-dashed bg-white p-5 text-sm text-slate-500">No tests have been released to you yet.</p>
                 ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
                         {tests.map(t => <TestCard key={t.id} test={t} onStart={() => setSelectedTestId(t.id)} />)}
                     </div>
                 )}
             </section>
+            </div>
         </div>
     )
 }

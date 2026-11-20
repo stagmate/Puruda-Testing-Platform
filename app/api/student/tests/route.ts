@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole } from "@/lib/api-auth"
+import { finalizeExpiredAttempts } from "@/lib/finalize-attempts"
 
 // Tests the logged-in student can see: published, and either assigned to one of
 // their batches or not assigned to any batch.
@@ -8,6 +9,7 @@ export async function GET() {
     const auth = await requireRole(["STUDENT", "ADMIN"])
     if (auth.response) return auth.response
     const userId = auth.user.id
+    if (auth.user.role === "STUDENT") await finalizeExpiredAttempts({ userId })
 
     const tests = await db.test.findMany({
         where: auth.user.role === "ADMIN" ? { isPublished: true } : {

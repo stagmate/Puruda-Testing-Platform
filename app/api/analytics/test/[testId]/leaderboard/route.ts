@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
+import { finalizeExpiredAttempts } from "@/lib/finalize-attempts"
 
 export async function GET(req: Request, { params }: { params: Promise<{ testId: string }> }) {
     const auth = await requireRole(STAFF)
@@ -8,6 +9,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ testId: 
 
     try {
         const { testId } = await params
+        await finalizeExpiredAttempts({ testId })
 
         const results = await db.testResult.findMany({
             where: { testId },

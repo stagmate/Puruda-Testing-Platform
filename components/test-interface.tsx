@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { RichText } from "@/components/rich-text"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
-import { Loader2, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock, Check, ChevronLeft, ChevronRight, LayoutGrid, LogOut, X, Eraser } from "lucide-react"
+import { Loader2, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock, Check, CloudOff, CloudUpload, ChevronLeft, ChevronRight, LayoutGrid, LogOut, X, Eraser } from "lucide-react"
 import { questionStatus, summarize, type QuestionStatus } from "@/lib/test-progress"
 import { cn } from "@/lib/utils"
 
@@ -34,6 +34,8 @@ type StudentTest = {
     questions: StudentQuestion[]
     deadline: string | null
     serverNow: string
+    /** Answers saved earlier in this attempt (autosave), restored on reopening. */
+    saved?: { answers: Record<string, Answer>; visited: number[] } | null
 }
 
 type SubmitResult = { score?: number; total?: number; resultMode: string }
@@ -89,6 +91,45 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const updateAnswers = (next: Record<string, Answer>) => {
         answersRef.current = next
         setAnswers(next)
+        scheduleSave()
+    }
+
+    // --- Autosave: answers (and which questions were opened) are saved to the
+    // server shortly after each change, retried while failing, and flushed when
+    // the tab is hidden or closed.
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
+    const visitedRef = useRef<Set<number>>(new Set([0]))
+    const dirtyRef = useRef(false)
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const savingRef = useRef(false)
+
+    const saveNow = useCallback(async (keepalive = false) => {
+        if (!dirtyRef.current || completedRef.current || submittingRef.current || (savingRef.current && !keepalive)) return
+        dirtyRef.current = false
+        savingRef.current = true
+        setSaveState("saving")
+        try {
+            const res = await fetch(`/api/student/test/${testId}/answers`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ answers: answersRef.current, visited: Array.from(visitedRef.current) }),
+                keepalive,
+            })
+            // 4xx (time up, already submitted): retrying won't help.
+            if (!res.ok && res.status >= 500) throw new Error("save failed")
+            setSaveState(res.ok ? "saved" : "error")
+        } catch {
+            dirtyRef.current = true // network trouble: try again on the next tick
+            setSaveState("error")
+        } finally {
+            savingRef.current = false
+        }
+    }, [testId])
+
+    const scheduleSave = () => {
+        dirtyRef.current = true
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = setTimeout(() => saveNow(), 1000)
     }
 
     const handleSubmit = useCallback(async () => {
@@ -134,6 +175,16 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     const skew = Date.now() - new Date(t.serverNow).getTime()
                     deadlineRef.current = new Date(t.deadline).getTime() + skew
                     setTimeLeft(deadlineRef.current - Date.now())
+                }
+                if (t.saved) {
+                    // Reopened: put back what the student had answered and opened.
+                    answersRef.current = t.saved.answers
+                    setAnswers(t.saved.answers)
+                    const seen = new Set([0, ...t.saved.visited])
+                    t.questions.forEach((q, i) => { if (q.id in t.saved!.answers) seen.add(i) })
+                    visitedRef.current = seen
+                    setVisited(seen)
+                    setSaveState("saved")
                 }
                 setTest(t)
                 setLoading(false)
@@ -209,6 +260,24 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
         }
     }, [warnings, handleSubmit])
 
+    useEffect(() => {
+        if (!test || completed) return
+        const retry = setInterval(() => saveNow(), 15000)
+        const flush = () => { if (document.visibilityState === "hidden") saveNow(true) }
+        const onPageHide = () => saveNow(true)
+        const onOnline = () => saveNow() // connection back: don't wait for the next retry
+        document.addEventListener("visibilitychange", flush)
+        window.addEventListener("pagehide", onPageHide)
+        window.addEventListener("online", onOnline)
+        return () => {
+            clearInterval(retry)
+            window.removeEventListener("online", onOnline)
+            document.removeEventListener("visibilitychange", flush)
+            window.removeEventListener("pagehide", onPageHide)
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+        }
+    }, [test, completed, saveNow])
+
     // Leaving mid-test: the browser Back button asks first (a history entry is
     // pushed so Back lands here instead of leaving) and exiting submits the test;
     // reload/close gets the browser's own leave-page warning.
@@ -243,7 +312,11 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
         if (!test) return
         const next = Math.max(0, Math.min(test.questions.length - 1, i))
         setCurrentQuestion(next)
-        setVisited(v => (v.has(next) ? v : new Set(v).add(next)))
+        if (!visitedRef.current.has(next)) {
+            visitedRef.current = new Set(visitedRef.current).add(next)
+            setVisited(visitedRef.current)
+            scheduleSave()
+        }
         setPaletteOpen(false)
     }
 
@@ -383,6 +456,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 <div className={cn("ml-auto flex items-center gap-1.5 text-sm sm:ml-0", warnings > 0 ? "font-bold text-red-600" : "text-slate-500")}>
                     <AlertTriangle className="h-4 w-4" /><span className="hidden sm:inline">Warnings</span> {warnings}/{MAX_WARNINGS}
                 </div>
+                <SaveIndicator state={saveState} />
                 {timeLeft !== null && (
                     <div className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm tabular-nums", lowTime ? "border-red-200 bg-red-50 font-bold text-red-600" : "border-slate-200 text-slate-700")}>
                         <Clock className="h-4 w-4" />{formatTime(timeLeft)}
@@ -598,5 +672,19 @@ function Prompt({ title, children, actions, onClose, tone }: { title: string; ch
                 <div className="flex flex-wrap justify-end gap-2">{actions}</div>
             </div>
         </div>
+    )
+}
+
+function SaveIndicator({ state }: { state: "idle" | "saving" | "saved" | "error" }) {
+    if (state === "idle") return null
+    const view = {
+        saving: { icon: <CloudUpload className="h-4 w-4 animate-pulse" />, text: "Saving…", cls: "text-slate-500" },
+        saved: { icon: <Check className="h-4 w-4" />, text: "Saved", cls: "text-green-700" },
+        error: { icon: <CloudOff className="h-4 w-4" />, text: "Not saved – retrying", cls: "font-medium text-amber-700" },
+    }[state]
+    return (
+        <span className={cn("flex items-center gap-1 text-sm", view.cls)} role="status" aria-live="polite">
+            {view.icon}<span className={state === "saved" ? "hidden sm:inline" : ""}>{view.text}</span>
+        </span>
     )
 }

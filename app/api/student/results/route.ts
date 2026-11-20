@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/api-auth"
 import { parseScheme, describeScheme } from "@/lib/marking"
 import { orderTestQuestions } from "@/lib/test-order"
 import { resultsVisible } from "@/lib/result-visibility"
+import { finalizeExpiredAttempts } from "@/lib/finalize-attempts"
 import { parseAnswers, rankOf, subjectBreakdown } from "@/lib/result-breakdown"
 
 // Every test the logged-in student has submitted, newest first, with the
@@ -12,6 +13,7 @@ import { parseAnswers, rankOf, subjectBreakdown } from "@/lib/result-breakdown"
 export async function GET() {
     const auth = await requireRole(["STUDENT"])
     if (auth.response) return auth.response
+    await finalizeExpiredAttempts({ userId: auth.user.id })
 
     const results = await db.testResult.findMany({
         where: { userId: auth.user.id },
