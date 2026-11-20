@@ -1,5 +1,6 @@
 "use client"
 
+import { BrandLogo } from "@/components/brand"
 import { useEffect, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
@@ -37,9 +38,7 @@ export function MobileNav() {
                 >
                     <Menu className="h-5 w-5" />
                 </DialogPrimitive.Trigger>
-                <span className="text-lg font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 text-transparent bg-clip-text">
-                    Puruda
-                </span>
+                <BrandLogo className="h-7" />
             </header>
 
             <DialogPrimitive.Portal>

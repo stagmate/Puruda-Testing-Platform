@@ -1,12 +1,12 @@
-"use client" // Convert to client component for demo toggle
+"use client"
+
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
+import { CalendarClock, CheckCircle2, Clock, FileText, Megaphone, PlayCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { TestInterface } from "@/components/test-interface"
-import { AIInsightCard } from "@/components/ai-insight-card"
-import { LogoutButton } from "@/components/logout-button"
-import { NewsWidget } from "@/components/news-widget"
-import { StudentReviewsList } from "@/components/student-reviews-list"
+import { cn } from "@/lib/utils"
 
 type StudentTestSummary = {
     id: string
@@ -19,10 +19,15 @@ type StudentTestSummary = {
     _count: { questions: number }
 }
 
+type Announcement = { id: string; title: string; content: string; createdAt: string; author?: { name: string | null } | null }
+
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+
 export default function StudentDashboard() {
-    const [showTest, setShowTest] = useState(false)
-    const [selectedTestId, setSelectedTestId] = useState("")
-    const [tests, setTests] = useState<StudentTestSummary[]>([])
+    const { data: session } = useSession()
+    const [selectedTestId, setSelectedTestId] = useState<string | null>(null)
+    const [tests, setTests] = useState<StudentTestSummary[] | null>(null)
+    const [announcements, setAnnouncements] = useState<Announcement[] | null>(null)
 
     const loadTests = useCallback(() => {
         fetch("/api/student/tests")
@@ -31,77 +36,110 @@ export default function StudentDashboard() {
             .catch(() => setTests([]))
     }, [])
 
-    useEffect(() => { loadTests() }, [loadTests])
+    useEffect(() => {
+        loadTests()
+        fetch("/api/announcements")
+            .then(r => (r.ok ? r.json() : []))
+            .then(data => setAnnouncements(Array.isArray(data) ? data : []))
+            .catch(() => setAnnouncements([]))
+    }, [loadTests])
 
-    if (showTest && selectedTestId) {
-        return <TestInterface testId={selectedTestId} onComplete={() => { setShowTest(false); loadTests() }} />
+    if (selectedTestId) {
+        return <TestInterface testId={selectedTestId} onComplete={() => { setSelectedTestId(null); loadTests() }} />
     }
 
+    const firstName = session?.user?.name?.split(" ")[0]
+
     return (
-        <div className="p-8">
-            <div className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">
-                    Student Dashboard
-                </h1>
-                <LogoutButton />
+        <div className="mx-auto max-w-5xl space-y-8 p-4 sm:p-8">
+            <div>
+                <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{firstName ? `Welcome, ${firstName}` : "Dashboard"}</h1>
+                <p className="mt-1 text-sm text-slate-500">Announcements from your institute and the tests open to you.</p>
             </div>
 
-            <div className="grid gap-8 md:grid-cols-2">
-                {/* AI Analysis */}
-                <div className="md:col-span-2">
-                    <AIInsightCard />
-                </div>
-
-                {/* News & Updates */}
-                <div className="md:col-span-1">
-                    <NewsWidget />
-                </div>
-
-                {/* Reviews */}
-                <div className="md:col-span-1">
-                    <StudentReviewsList />
-                </div>
-
-                <div className="space-y-6">
-                    <h2 className="text-2xl font-semibold tracking-tight">Available Tests</h2>
-                    <div className="grid gap-4">
-                        {tests.length === 0 && <p className="text-muted-foreground">No active tests found.</p>}
-                        {tests.map(test => (
-                            <div key={test.id} className="p-4 border rounded-xl bg-white shadow-sm hover:shadow-md transition-all flex justify-between items-center">
-                                <div>
-                                    <h3 className="font-bold text-lg">{test.title}</h3>
-                                    <p className="text-sm text-muted-foreground">
-                                        {test._count.questions} Questions • {test.type}{test.duration ? ` • ${test.duration} min` : ""}
-                                    </p>
-                                    {test.startTime && <p className="text-xs text-orange-600 mt-1">Starts: {new Date(test.startTime).toLocaleString()}</p>}
+            {/* Announcements */}
+            <section aria-labelledby="announcements" className="space-y-3">
+                <h2 id="announcements" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                    <Megaphone className="h-5 w-5 text-orange-500" />Announcements
+                </h2>
+                {announcements === null ? (
+                    <div className="h-20 animate-pulse rounded-xl bg-slate-100" />
+                ) : announcements.length === 0 ? (
+                    <p className="rounded-xl border border-dashed bg-white p-5 text-sm text-slate-500">No announcements right now.</p>
+                ) : (
+                    <ul className="space-y-3">
+                        {announcements.map(a => (
+                            <li key={a.id} className="rounded-xl border border-l-4 border-l-orange-500 bg-white p-4 shadow-sm">
+                                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                                    <h3 className="font-semibold text-slate-900">{a.title}</h3>
+                                    <span className="text-xs text-slate-500">{new Date(a.createdAt).toLocaleDateString()}{a.author?.name ? ` · ${a.author.name}` : ""}</span>
                                 </div>
-                                {test.submitted ? (
-                                    <span className="text-sm font-medium text-green-600">Submitted</span>
-                                ) : (
-                                    <Button
-                                        onClick={() => { setSelectedTestId(test.id); setShowTest(true) }}
-                                        className="bg-indigo-600 hover:bg-indigo-700"
-                                    >
-                                        Start Test
-                                    </Button>
-                                )}
-                            </div>
+                                <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-700">{a.content}</p>
+                            </li>
                         ))}
-                    </div>
-                </div>
+                    </ul>
+                )}
+            </section>
 
-                <div className="p-6 border rounded-xl bg-slate-50/50">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-semibold">My Performance</h2>
-                        <Button variant="outline" size="sm" onClick={() => window.location.href = '/student/report'}>
-                            View Full Report
-                        </Button>
-                    </div>
-                    <div className="h-40 bg-white border border-dashed rounded-lg flex items-center justify-center text-muted-foreground">
-                        Performance Chart Coming Soon
-                    </div>
+            {/* Available tests */}
+            <section aria-labelledby="tests" className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 id="tests" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                        <FileText className="h-5 w-5 text-indigo-600" />Available tests
+                    </h2>
+                    <Link href="/student/results" className="text-sm font-medium text-indigo-600 hover:underline">See my results →</Link>
                 </div>
+                {tests === null ? (
+                    <div className="grid gap-3 sm:grid-cols-2"><div className="h-28 animate-pulse rounded-xl bg-slate-100" /><div className="h-28 animate-pulse rounded-xl bg-slate-100" /></div>
+                ) : tests.length === 0 ? (
+                    <p className="rounded-xl border border-dashed bg-white p-5 text-sm text-slate-500">No tests have been released to you yet.</p>
+                ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {tests.map(t => <TestCard key={t.id} test={t} onStart={() => setSelectedTestId(t.id)} />)}
+                    </div>
+                )}
+            </section>
+        </div>
+    )
+}
+
+function TestCard({ test, onStart }: { test: StudentTestSummary; onStart: () => void }) {
+    // Decided once per render from the clock; the list reloads after each test.
+    const [now] = useState(() => Date.now())
+    const notYet = !!test.startTime && new Date(test.startTime).getTime() > now
+    const closed = !!test.endTime && new Date(test.endTime).getTime() < now
+    const state = test.submitted ? "submitted" : notYet ? "scheduled" : closed ? "closed" : "open"
+
+    return (
+        <div className="flex flex-col justify-between gap-4 rounded-xl border bg-white p-4 shadow-sm">
+            <div>
+                <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-slate-900">{test.title}</h3>
+                    <span className={cn("shrink-0 rounded px-2 py-0.5 text-xs font-semibold", {
+                        open: "bg-green-100 text-green-800",
+                        scheduled: "bg-blue-100 text-blue-800",
+                        closed: "bg-slate-200 text-slate-700",
+                        submitted: "bg-emerald-100 text-emerald-800",
+                    }[state])}>
+                        {{ open: "Open", scheduled: "Upcoming", closed: "Closed", submitted: "Submitted" }[state]}
+                    </span>
+                </div>
+                <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+                    <span>{test._count.questions} questions</span>
+                    {test.duration > 0 && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{test.duration} min</span>}
+                </p>
+                {notYet && test.startTime && <p className="mt-1 flex items-center gap-1 text-xs text-blue-700"><CalendarClock className="h-3.5 w-3.5" />Opens {when(test.startTime)}</p>}
+                {!notYet && test.endTime && !test.submitted && <p className="mt-1 text-xs text-slate-500">{closed ? "Closed" : "Closes"} {when(test.endTime)}</p>}
             </div>
+            {state === "submitted" ? (
+                <Link href="/student/results" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:underline">
+                    <CheckCircle2 className="h-4 w-4" />View result
+                </Link>
+            ) : (
+                <Button onClick={onStart} disabled={state !== "open"} className="w-full bg-indigo-600 hover:bg-indigo-700 sm:w-auto sm:self-start">
+                    <PlayCircle className="mr-1.5 h-4 w-4" />Start test
+                </Button>
+            )}
         </div>
     )
 }

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
         ).join("\n")
 
         const prompt = `
-        You are an expert Academic Tutor and Counselor for Puruda Classes.
+        You are an expert Academic Tutor and Counselor for Rankify.me.
         Analyze the following recent test performance for a student (ID: ${targetUserId}):
 
         ${historyText}

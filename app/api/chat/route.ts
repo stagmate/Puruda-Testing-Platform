@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 
 const SYSTEM_PROMPT = `
-You are the AI Support Assistant for "Puruda Classes Testing Platform".
+You are the AI Support Assistant for "Rankify.me".
 Your role is to help Admins, Teachers, and Students use the platform.
 
 Key Features to know:
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
         const chat = model.startChat({
             history: [
                 { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-                { role: "model", parts: [{ text: "Understood. I am ready to help with Puruda Platform." }] },
+                { role: "model", parts: [{ text: "Understood. I am ready to help with Rankify.me." }] },
                 ...history
             ]
         })

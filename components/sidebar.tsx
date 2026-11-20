@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { signOutTo } from "@/components/session-guard"
 import { cn } from "@/lib/utils"
+import { BrandMark } from "@/components/brand"
 import { ADMIN_SECTIONS, adminSectionHref } from "@/lib/admin-sections"
 import { LayoutDashboard, BookOpen, FileQuestion, PenTool, LogOut, type LucideIcon } from "lucide-react"
 
@@ -35,24 +36,22 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             { key: "tests", label: "Tests", icon: PenTool, href: "/teacher?tab=tests", color: "text-emerald-400" },
         ] : []),
         ...(isStudent ? [
-            { key: "overview", label: "My Dashboard", icon: LayoutDashboard, href: "/student", color: "text-sky-400" },
-            { key: "report", label: "My Report", icon: FileQuestion, href: "/student/report", color: "text-emerald-400" },
+            { key: "overview", label: "Dashboard", icon: LayoutDashboard, href: "/student", color: "text-sky-400" },
+            { key: "results", label: "Results & Reports", icon: FileQuestion, href: "/student/results", color: "text-emerald-400" },
         ] : []),
     ]
 
     const isActive = (route: NavRoute) => {
         const [path] = route.href.split("?")
         if (pathname !== path) return false
-        return route.key === "overview" ? !currentTab || currentTab === "overview" : currentTab === route.key || route.key === "report"
+        return route.key === "overview" ? !currentTab || currentTab === "overview" : currentTab === route.key || route.key === "results"
     }
 
     return (
         <div className="flex h-full flex-col bg-slate-900 text-white">
             <div className="flex-1 overflow-y-auto px-3 py-4">
                 <Link href="/" onClick={onNavigate} className="mb-8 flex items-center pl-3">
-                    <span className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 text-transparent bg-clip-text">
-                        Puruda
-                    </span>
+                    <BrandMark tone="dark" />
                     {isAdmin && <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">Admin</span>}
                 </Link>
                 <nav className="space-y-1" aria-label="Dashboard sections">

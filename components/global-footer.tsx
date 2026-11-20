@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation"
 import { isDashboardPath } from "@/lib/dashboard-routes"
 import Link from "next/link"
-import { GraduationCap, ShieldCheck } from "lucide-react"
+import { BrandMark } from "@/components/brand"
+import { ShieldCheck } from "lucide-react"
 
 export function GlobalFooter() {
     const pathname = usePathname()
@@ -15,12 +16,7 @@ export function GlobalFooter() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
                     {/* Brand & Description */}
                     <div className="lg:col-span-2 space-y-4">
-                        <div className="flex items-center gap-2.5 text-white">
-                            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
-                                <GraduationCap className="h-5 w-5" />
-                            </div>
-                            <span className="font-black text-lg tracking-tight">Puruda Testing Platform</span>
-                        </div>
+                        <BrandMark tone="dark" iconClassName="h-9 w-9" />
                         <p className="text-slate-400 text-xs sm:text-sm leading-relaxed max-w-sm">
                             The high-performance, proctored examination and test preparation engine for coaching academies, schools, and university campuses.
                         </p>
@@ -70,7 +66,7 @@ export function GlobalFooter() {
 
                 <div className="pt-12 mt-12 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
                     <div>
-                        © {new Date().getFullYear()} Puruda Classes & Testing Platform. All rights reserved.
+                        © {new Date().getFullYear()} Rankify.me. All rights reserved.
                     </div>
                     <div className="flex items-center gap-6">
                         <a href="#faq" className="hover:text-slate-300">Privacy & Data Security</a>

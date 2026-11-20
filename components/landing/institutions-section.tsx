@@ -95,7 +95,7 @@ export function InstitutionsSection() {
                         </span>
                     </h2>
                     <p className="text-slate-400 text-base md:text-lg">
-                        Whether you are training future Olympiad rankers, managing high school midterms, or conducting university finals — Puruda scales seamlessly to your workflow.
+                        Whether you are training future Olympiad rankers, managing high school midterms, or conducting university finals — Rankify.me scales seamlessly to your workflow.
                     </p>
                 </div>
 

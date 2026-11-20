@@ -45,7 +45,7 @@ export function FeaturesGrid() {
             icon: BrainCircuit,
             badge: "24/7 AI Insights",
             title: "AI-Powered Concept Diagnostician",
-            description: "Puruda AI analyzes student test submissions, pinpoints weak conceptual foundations, and delivers step-by-step mathematical derivations on demand.",
+            description: "Rankify.me AI analyzes student test submissions, pinpoints weak conceptual foundations, and delivers step-by-step mathematical derivations on demand.",
             color: "text-amber-600 bg-amber-50 border-amber-100",
             pill: "Instant Solutions"
         },
