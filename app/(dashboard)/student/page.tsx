@@ -7,6 +7,8 @@ import { CalendarClock, CheckCircle2, Clock, FileText, Megaphone, PlayCircle } f
 import { Button } from "@/components/ui/button"
 import { TestInterface } from "@/components/test-interface"
 import { cn } from "@/lib/utils"
+import { NewBadge } from "@/components/new-badge"
+import { isNewAnnouncement } from "@/lib/announcements"
 
 type StudentTestSummary = {
     id: string
@@ -19,7 +21,7 @@ type StudentTestSummary = {
     _count: { questions: number }
 }
 
-type Announcement = { id: string; title: string; content: string; createdAt: string; author?: { name: string | null } | null }
+type Announcement = { id: string; title: string; content: string; createdAt: string; startsAt?: string; endsAt?: string | null; author?: { name: string | null } | null }
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 
@@ -70,8 +72,11 @@ export default function StudentDashboard() {
                         {announcements.map(a => (
                             <li key={a.id} className="rounded-xl border border-l-4 border-l-orange-500 bg-white p-4 shadow-sm">
                                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                                    <h3 className="font-semibold text-slate-900">{a.title}</h3>
-                                    <span className="text-xs text-slate-500">{new Date(a.createdAt).toLocaleDateString()}{a.author?.name ? ` · ${a.author.name}` : ""}</span>
+                                    <h3 className="flex items-center gap-2 font-semibold text-slate-900">
+                                        {a.title}
+                                        {isNewAnnouncement({ startsAt: a.startsAt ?? a.createdAt, endsAt: a.endsAt }) && <NewBadge />}
+                                    </h3>
+                                    <span className="text-xs text-slate-500">{new Date(a.startsAt ?? a.createdAt).toLocaleDateString()}{a.author?.name ? ` · ${a.author.name}` : ""}</span>
                                 </div>
                                 <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-700">{a.content}</p>
                             </li>

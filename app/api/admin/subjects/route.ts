@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
+import { cleanName, dbErrorResponse } from "@/lib/api-errors"
 
 export async function GET() {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
-    const subjects = await db.subject.findMany()
+    const subjects = await db.subject.findMany({
+        include: { _count: { select: { chapters: true, questions: true } } },
+        orderBy: { name: "asc" },
+    })
     return NextResponse.json(subjects)
 }
 
@@ -15,13 +19,11 @@ export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
+    const name = cleanName((await req.json().catch(() => null))?.name)
+    if (!name) return new NextResponse("Name is required", { status: 400 })
     try {
-        const { name } = await req.json()
-        if (!name || typeof name !== "string") return new NextResponse("Name is required", { status: 400 })
-        const subject = await db.subject.create({ data: { name: name.trim() } })
-        return NextResponse.json(subject)
+        return NextResponse.json(await db.subject.create({ data: { name } }))
     } catch (error) {
-        console.error("[SUBJECTS_POST]", error)
-        return new NextResponse("Error creating subject", { status: 500 })
+        return dbErrorResponse(error, "subject", "SUBJECTS_POST")
     }
 }

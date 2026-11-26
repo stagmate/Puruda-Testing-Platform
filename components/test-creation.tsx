@@ -1,398 +1,95 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSession } from "next-auth/react"
-import { MarkingFields, TestList, type ManagedTest } from "@/components/test-manager"
-import { MARKING_PRESETS, type MarkingScheme } from "@/lib/marking"
+import { ListChecks, PenTool, Plus } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TestList, testStatus, type ManagedTest, type ReleaseBatch } from "@/components/test-manager"
+import { TestBuilder } from "@/components/tests/test-builder"
+import { EmptyState, LoadingRow, Panel, PanelHeader, SearchInput, getJson } from "@/components/admin/kit"
+import { cn } from "@/lib/utils"
 
+const STATUSES = ["All", "Live", "Scheduled", "Draft", "Closed"] as const
+
+/** Tests: a list of every test, and a separate tab to build a new one. */
 export function TestCreation() {
-    const [courses, setCourses] = useState<any[]>([])
-    const [batches, setBatches] = useState<any[]>([])
-    const [subjects, setSubjects] = useState<any[]>([])
-    const [tests, setTests] = useState<any[]>([])
-    const [availableQuestions, setAvailableQuestions] = useState<any[]>([])
-
-    // Form State
-    const [title, setTitle] = useState("")
-    const [duration, setDuration] = useState("60")
-    const [selectedCourse, setSelectedCourse] = useState("")
-    const [selectedBatches, setSelectedBatches] = useState<string[]>([])
-    const [creationMode, setCreationMode] = useState("auto") // auto | manual
-
-    // Generator State
-    const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
-    const [questionCount, setQuestionCount] = useState("20")
-    const [generatedIds, setGeneratedIds] = useState<string[]>([])
-    const [isGenerating, setIsGenerating] = useState(false)
-
-    // Manual State
-    const [manualSelectedIds, setManualSelectedIds] = useState<string[]>([])
-    const [manualFilterSubject, setManualFilterSubject] = useState("")
-
-    // New Question State
-    const [isAddingQ, setIsAddingQ] = useState(false)
-    const [newQ, setNewQ] = useState({ text: "", optionA: "", optionB: "", optionC: "", optionD: "", correct: "" })
-    const [qImages, setQImages] = useState<{ q?: File, a?: File, b?: File, c?: File, d?: File }>({})
-
-    const fetchMetadata = async () => {
-        const [c, b, s, t] = await Promise.all([
-            fetch("/api/admin/courses").then(r => r.json()),
-            fetch("/api/admin/batches").then(r => r.json()),
-            fetch("/api/admin/subjects").then(r => r.json()),
-            fetch("/api/admin/tests").then(r => r.json()),
-        ])
-        setCourses(c || [])
-        setBatches(b || [])
-        setSubjects(s || [])
-        setTests(t || [])
-    }
-
-    const fetchQuestions = async () => {
-        const params = new URLSearchParams()
-        if (selectedCourse) params.append("courseId", selectedCourse)
-        if (manualFilterSubject) params.append("subjectId", manualFilterSubject)
-
-        const res = await fetch(`/api/admin/questions?${params.toString()}`)
-        if (res.ok) {
-            const { data } = await res.json()
-            setAvailableQuestions(data || [])
-        }
-    }
-
-    useEffect(() => { fetchMetadata() }, [])
-    useEffect(() => {
-        if (creationMode === "manual") fetchQuestions()
-    }, [creationMode, selectedCourse, manualFilterSubject])
-
-    const toggleBatch = (id: string) => {
-        setSelectedBatches(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-    }
-
-    const toggleSubject = (id: string) => {
-        setSelectedSubjects(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-    }
-
-    const toggleManusalQuestion = (id: string) => {
-        setManualSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-    }
-
-    // --- Generator Logic ---
-    const handleGenerate = async () => {
-        setIsGenerating(true)
-        const res = await fetch("/api/admin/tests/generate", {
-            method: "POST",
-            body: JSON.stringify({
-                courseId: selectedCourse,
-                subjectIds: selectedSubjects,
-                count: parseInt(questionCount)
-            })
-        })
-        const data = await res.json()
-        if (res.ok) {
-            setGeneratedIds(data.questions.map((q: any) => q.id))
-            alert(`Generated ${data.count} questions! Review and Save.`)
-        } else {
-            alert("Error: " + JSON.stringify(data))
-        }
-        setIsGenerating(false)
-    }
-
-    // --- Create Test Logic ---
-    // Scheduling State
-    const [startTime, setStartTime] = useState("")
-    const [endTime, setEndTime] = useState("")
-    const [resultMode, setResultMode] = useState("INSTANT")
-    const [showRank, setShowRank] = useState(false)
-    const [marking, setMarking] = useState<MarkingScheme>(structuredClone(MARKING_PRESETS.STANDARD.scheme))
-    const [publishNow, setPublishNow] = useState(true)
+    const [tab, setTab] = useState("list")
+    const [tests, setTests] = useState<ManagedTest[]>([])
+    const [batches, setBatches] = useState<ReleaseBatch[]>([])
+    const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState("")
+    const [status, setStatus] = useState<(typeof STATUSES)[number]>("All")
     const { data: session } = useSession()
     const isAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN"
 
-    // ... (rest of state)
+    const fetchAll = useCallback(() => Promise.all([getJson<ManagedTest[]>("/api/admin/tests", []), getJson<ReleaseBatch[]>("/api/admin/batches", [])]), [])
+    const apply = useCallback(([t, b]: [ManagedTest[], ReleaseBatch[]]) => { setTests(t); setBatches(b); setLoading(false) }, [])
+    const reload = useCallback(() => fetchAll().then(apply), [fetchAll, apply])
+    useEffect(() => { fetchAll().then(apply) }, [fetchAll, apply])
 
-    // ... (fetchMetadata etc)
+    const counts = useMemo(() => {
+        const c: Record<string, number> = { All: tests.length }
+        for (const t of tests) { const s = testStatus(t).label; c[s] = (c[s] ?? 0) + 1 }
+        return c
+    }, [tests])
 
-    // --- Create Test Logic ---
-    const handleCreateTest = async () => {
-        const finalQuestionIds = creationMode === "auto" ? generatedIds : manualSelectedIds
-
-        if (!title || finalQuestionIds.length === 0 || selectedBatches.length === 0) {
-            alert("Please fill Title, Select Batches, and Select Questions")
-            return
-        }
-
-        const res = await fetch("/api/admin/tests", {
-            method: "POST",
-            body: JSON.stringify({
-                title,
-                duration,
-                type: (selectedSubjects.length > 1 || manualSelectedIds.length > 0) ? "MIXED" : "SUBJECT",
-                courseId: selectedCourse,
-                batchIds: selectedBatches,
-                questionIds: finalQuestionIds,
-                // datetime-local has no timezone; convert in the browser so the teacher's local time is kept.
-                startTime: startTime ? new Date(startTime).toISOString() : null,
-                endTime: endTime ? new Date(endTime).toISOString() : null,
-                resultMode,
-                showRank,
-                marking,
-                publish: publishNow,
-            })
-        })
-
-        if (res.ok) {
-            alert("Test Created Successfully!")
-            setTitle("")
-            setStartTime("")
-            setEndTime("")
-            setResultMode("INSTANT")
-            setShowRank(false)
-            setMarking(structuredClone(MARKING_PRESETS.STANDARD.scheme))
-            setGeneratedIds([])
-            setManualSelectedIds([])
-            fetchMetadata()
-        }
-    }
-
-    // --- New Question Logic ---
-    const uploadImage = async (file?: File) => {
-        if (!file) return null
-        const formData = new FormData()
-        formData.append("file", file)
-        const res = await fetch("/api/upload", { method: "POST", body: formData })
-        if (res.ok) return (await res.json()).url
-        return null
-    }
-
-    const handleQuickAddQuestion = async () => {
-        if (!newQ.text || !newQ.correct || !manualFilterSubject) {
-            alert("Fill required fields and ensure a Subject filter is active (to tag the question)")
-            return
-        }
-        setIsAddingQ(true)
-
-        const [qUrl, aUrl, bUrl, cUrl, dUrl] = await Promise.all([
-            uploadImage(qImages.q), uploadImage(qImages.a), uploadImage(qImages.b), uploadImage(qImages.c), uploadImage(qImages.d)
-        ])
-
-        const payload = {
-            text: newQ.text,
-            imageUrl: qUrl,
-            options: [newQ.optionA, newQ.optionB, newQ.optionC, newQ.optionD],
-            optionImages: [aUrl, bUrl, cUrl, dUrl],
-            correct: newQ.correct,
-            courseId: selectedCourse || null,
-            subjectId: manualFilterSubject
-        }
-
-        const res = await fetch("/api/admin/questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
-        if (res.ok) {
-            const savedQ = await res.json()
-            setManualSelectedIds(prev => [...prev, savedQ.id]) // Auto-select
-            setNewQ({ text: "", optionA: "", optionB: "", optionC: "", optionD: "", correct: "" })
-            setQImages({})
-            fetchQuestions() // Refresh list
-            alert("Question Added & Selected!")
-        } else {
-            alert(`Couldn't add the question: ${await res.text()}`)
-        }
-        setIsAddingQ(false)
-    }
+    const q = search.trim().toLowerCase()
+    const shown = tests.filter(t =>
+        (status === "All" || testStatus(t).label === status) &&
+        (!q || [t.title, t.course?.name, ...t.batches.map(b => b.name)].join(" ").toLowerCase().includes(q)))
 
     return (
-        <Card className="mt-8">
-            <CardHeader>
-                <CardTitle>Test Creation & Management</CardTitle>
-                <CardDescription>Create Auto-Generated or Manual Tests</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Left: Create Form */}
-                    <div className="space-y-4 lg:border-r lg:pr-8">
-                        <div className="space-y-2">
-                            <Label>Test Title</Label>
-                            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. JEE Mains Mock 1" />
-                        </div>
+        <Tabs value={tab} onValueChange={setTab} className="gap-4">
+            <TabsList className="h-auto w-full justify-start gap-1 bg-slate-200/60 p-1 sm:w-auto">
+                <TabsTrigger value="list" className="flex-none gap-1.5 px-4 py-1.5"><ListChecks className="h-4 w-4" />All tests
+                    {!loading && <span className="rounded-full bg-slate-200 px-1.5 text-[11px] font-semibold text-slate-600">{tests.length}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="create" className="flex-none gap-1.5 px-4 py-1.5"><Plus className="h-4 w-4" />Create test</TabsTrigger>
+            </TabsList>
 
-                        {/* Scheduling Section */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border rounded-md bg-slate-50">
-                            <div className="space-y-2">
-                                <Label>Start Time (Optional)</Label>
-                                <Input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>End Time (Optional)</Label>
-                                <Input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Result Mode</Label>
-                                <Select value={resultMode} onValueChange={setResultMode}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="INSTANT">Instant Release</SelectItem>
-                                        <SelectItem value="MANUAL">Manual Release</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="flex items-end mb-2">
-                                <div className="flex items-center space-x-2">
-                                    <Checkbox id="showRank" checked={showRank} onCheckedChange={(c) => setShowRank(!!c)} />
-                                    <label
-                                        htmlFor="showRank"
-                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                    >
-                                        Show Rank to Students
-                                    </label>
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Duration (mins)</Label>
-                                <Input type="number" value={duration} onChange={e => setDuration(e.target.value)} />
-                            </div>
-                            <div className="space-y-2 sm:col-span-2">
-                                <Label>Marking</Label>
-                                <MarkingFields value={marking} onChange={setMarking} />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label>Course Scope</Label>
-                            <Select value={selectedCourse} onValueChange={setSelectedCourse}>
-                                <SelectTrigger><SelectValue placeholder="Select Course" /></SelectTrigger>
-                                <SelectContent>
-                                    {courses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* ... Batches & Tabs ... */}
-                        <div className="space-y-2">
-                            <Label>Assign to Batches</Label>
-                            <div className="grid grid-cols-2 gap-2 border p-2 rounded max-h-32 overflow-y-auto">
-                                {batches.filter(b => !selectedCourse || b.courseId === selectedCourse).map(b => (
-                                    <div key={b.id} className="flex items-center gap-2">
-                                        <Checkbox checked={selectedBatches.includes(b.id)} onCheckedChange={() => toggleBatch(b.id)} />
-                                        <span className="text-sm">{b.name}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <Tabs value={creationMode} onValueChange={setCreationMode} className="w-full">
-                            <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="auto">Auto Generator</TabsTrigger>
-                                <TabsTrigger value="manual">Manual Selection</TabsTrigger>
-                            </TabsList>
-
-                            {/* AUTO MODE */}
-                            <TabsContent value="auto" className="space-y-4 border p-4 rounded mt-2">
-                                <div className="space-y-2">
-                                    <Label>Subjects to Include</Label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {subjects.map(s => (
-                                            <Button
-                                                key={s.id}
-                                                variant={selectedSubjects.includes(s.id) ? "default" : "outline"}
-                                                size="sm"
-                                                onClick={() => toggleSubject(s.id)}
-                                            >
-                                                {s.name}
-                                            </Button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex gap-4 items-end">
-                                    <div className="space-y-2 flex-1">
-                                        <Label>Question Count</Label>
-                                        <Input type="number" value={questionCount} onChange={e => setQuestionCount(e.target.value)} />
-                                    </div>
-                                    <Button onClick={handleGenerate} disabled={isGenerating || selectedSubjects.length === 0} variant="secondary">
-                                        {isGenerating ? "AI Generating..." : "Generate Qs"}
-                                    </Button>
-                                </div>
-                                {generatedIds.length > 0 && (
-                                    <p className="text-sm text-green-600 font-medium">{generatedIds.length} questions queued.</p>
-                                )}
-                            </TabsContent>
-
-                            {/* MANUAL MODE */}
-                            <TabsContent value="manual" className="space-y-4 border p-4 rounded mt-2">
-                                <div className="flex gap-2">
-                                    <Select value={manualFilterSubject} onValueChange={setManualFilterSubject}>
-                                        <SelectTrigger><SelectValue placeholder="Filter by Subject" /></SelectTrigger>
-                                        <SelectContent>
-                                            {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-
-                                    <Dialog>
-                                        <DialogTrigger asChild><Button variant="outline" size="icon">+</Button></DialogTrigger>
-                                        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                                            <DialogHeader><DialogTitle>Add New Question</DialogTitle></DialogHeader>
-                                            <div className="space-y-4 py-4">
-                                                <div className="space-y-2">
-                                                    <Label>Question Text</Label>
-                                                    <Textarea value={newQ.text} onChange={e => setNewQ({ ...newQ, text: e.target.value })} />
-                                                    <Input type="file" onChange={e => setQImages({ ...qImages, q: e.target.files?.[0] })} />
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    {['A', 'B', 'C', 'D'].map(opt => (
-                                                        <div key={opt}>
-                                                            <Input placeholder={`Option ${opt}`} value={(newQ as any)[`option${opt}`]} onChange={e => setNewQ({ ...newQ, [`option${opt}`]: e.target.value })} />
-                                                            <Input type="file" className="text-xs" onChange={e => setQImages({ ...qImages, [opt.toLowerCase()]: e.target.files?.[0] })} />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label>Correct Answer</Label>
-                                                    <Input placeholder="Correct Answer Text" value={newQ.correct} onChange={e => setNewQ({ ...newQ, correct: e.target.value })} />
-                                                </div>
-                                                <Button onClick={handleQuickAddQuestion} disabled={isAddingQ}>{isAddingQ ? "Saving..." : "Save & Select"}</Button>
-                                            </div>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-
-                                <div className="h-64 overflow-y-auto border rounded p-2 space-y-2">
-                                    {availableQuestions.map(q => (
-                                        <div key={q.id} className="flex items-start gap-2 p-2 border-b">
-                                            <Checkbox checked={manualSelectedIds.includes(q.id)} onCheckedChange={() => toggleManusalQuestion(q.id)} />
-                                            <div className="text-sm">
-                                                <p className="font-medium line-clamp-2">{q.text}</p>
-                                                {q.imageUrl && <span className="text-xs bg-blue-100 text-blue-800 px-1 rounded">Img</span>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <p className="text-sm text-right text-muted-foreground">{manualSelectedIds.length} selected</p>
-                            </TabsContent>
-                        </Tabs>
-
-                        <label className="mt-4 flex items-center gap-2 text-sm">
-                            <Checkbox checked={publishNow} onCheckedChange={c => setPublishNow(c === true)} />
-                            Publish now (otherwise it is saved as a draft that students can&apos;t see)
-                        </label>
-                        <Button onClick={handleCreateTest} className="w-full mt-2" size="lg">{publishNow ? "Create & Publish Test" : "Create Draft Test"}</Button>
+            <TabsContent value="list">
+                <Panel>
+                    <PanelHeader
+                        title="Tests"
+                        subtitle="Publish, schedule, release results, print or preview each test."
+                        actions={<>
+                            <SearchInput value={search} onChange={setSearch} placeholder="Search title, course or batch" className="w-full sm:w-72" />
+                            <Button onClick={() => setTab("create")}><Plus className="h-4 w-4" />Create test</Button>
+                        </>}
+                    />
+                    <div className="flex flex-wrap gap-1.5 border-b border-slate-200 px-4 py-2.5 md:px-5">
+                        {STATUSES.map(s => (
+                            <button
+                                key={s}
+                                type="button"
+                                onClick={() => setStatus(s)}
+                                aria-pressed={status === s}
+                                className={cn("rounded-full px-3 py-1 text-sm font-medium transition", status === s ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                            >
+                                {s} <span className="tabular-nums opacity-70">{counts[s] ?? 0}</span>
+                            </button>
+                        ))}
                     </div>
-
-                    {/* Right: List */}
-                    <div>
-                        <h3 className="font-semibold mb-4">Tests</h3>
-                        <div className="max-h-[700px] overflow-y-auto pr-1">
-                            <TestList tests={tests as ManagedTest[]} batches={batches} onChanged={fetchMetadata} canDelete={isAdmin} />
-                        </div>
+                    <div className="p-4 md:p-5">
+                        {loading ? <LoadingRow /> : shown.length === 0 ? (
+                            <EmptyState
+                                icon={PenTool}
+                                title={tests.length ? "No test matches" : "No tests yet"}
+                                hint={tests.length ? undefined : "Build your first test from the question bank."}
+                                action={tests.length ? undefined : <Button onClick={() => setTab("create")}><Plus className="h-4 w-4" />Create test</Button>}
+                            />
+                        ) : (
+                            <TestList tests={shown} batches={batches} onChanged={reload} canDelete={isAdmin} />
+                        )}
                     </div>
-                </div>
-            </CardContent>
-        </Card>
+                </Panel>
+            </TabsContent>
+
+            {/* Kept mounted so a half-built test survives switching tabs. */}
+            <TabsContent value="create" forceMount className="data-[state=inactive]:hidden">
+                <TestBuilder onCreated={reload} />
+            </TabsContent>
+        </Tabs>
     )
 }

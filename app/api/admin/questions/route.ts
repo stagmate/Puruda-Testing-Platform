@@ -5,6 +5,7 @@ import { requireRole, STAFF } from "@/lib/api-auth"
 import { isDifficulty, isQuestionType } from "@/lib/question-enums"
 import { normalizeQuestion } from "@/lib/question-input"
 import { cleanContext } from "@/lib/question-context"
+import { cleanExamTag, resolveContext } from "@/lib/question-context-server"
 
 // GET: questions with optional filters, newest first
 export async function GET(req: Request) {
@@ -69,7 +70,11 @@ export async function POST(req: Request) {
         const { fields, error } = normalizeQuestion(body)
         if (error || !fields) return new NextResponse(error, { status: 400 })
 
-        const question = await db.question.create({ data: { ...fields, ...cleanContext(body) } })
+        const { context, error: contextError } = await resolveContext(cleanContext(body))
+        if (contextError || !context) return new NextResponse(contextError, { status: 400 })
+        if (!context.subjectId) return new NextResponse("Choose a subject", { status: 400 })
+
+        const question = await db.question.create({ data: { ...fields, ...context, examTag: cleanExamTag(body.examTag) } })
         return NextResponse.json(question)
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {

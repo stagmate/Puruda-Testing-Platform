@@ -8,7 +8,7 @@ import { QuestionBankManagement } from "@/components/question-bank"
 import { TestCreation } from "@/components/test-creation"
 import { Leaderboard } from "@/components/leaderboard"
 import { StudentPerformanceExplorer } from "@/components/analytics/student-performance-explorer"
-import { CreateAnnouncementDialog } from "@/components/create-announcement-dialog"
+import { AnnouncementManager } from "@/components/admin/announcement-manager"
 import { AdminReviewApproval } from "@/components/admin-review-approval"
 import { AdminOverview } from "@/components/admin/admin-overview"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,22 +20,19 @@ function AdminDashboardContent() {
     const section = getAdminSection(searchParams.get("tab"))
 
     return (
-        <div className="mx-auto w-full max-w-7xl space-y-4 p-4 pb-24 md:space-y-6 md:p-8 md:pb-24">
-            <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Admin dashboard</p>
-                    <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-900 md:text-3xl">
-                        <section.icon className="h-6 w-6 shrink-0 text-slate-400 md:h-7 md:w-7" />
-                        <span className="truncate">{section.label}</span>
-                    </h1>
-                    <p className="mt-1 text-sm text-slate-500">{section.description}</p>
-                </div>
-                <div className="shrink-0">
-                    <CreateAnnouncementDialog />
-                </div>
+        <div className="flex min-h-screen w-full flex-col">
+            {/* Page header stays in view while the section scrolls (below the mobile top bar on small screens). */}
+            <header className="sticky top-14 z-30 border-b border-slate-200 bg-white px-4 py-3 md:top-0 md:px-6 md:py-4">
+                <h1 className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-slate-900 md:text-2xl">
+                    <section.icon className="h-5 w-5 shrink-0 text-indigo-500 md:h-6 md:w-6" />
+                    <span className="truncate">{section.label}</span>
+                </h1>
+                {section.description && <p className="mt-0.5 text-sm text-slate-500">{section.description}</p>}
             </header>
 
-            <SectionContent sectionKey={section.key} />
+            <div className="w-full flex-1 space-y-4 px-4 py-4 pb-24 md:space-y-6 md:px-6 md:py-6 md:pb-24">
+                <SectionContent sectionKey={section.key} />
+            </div>
         </div>
     )
 }
@@ -53,6 +50,8 @@ function SectionContent({ sectionKey }: { sectionKey: string }) {
             return <TestCreation />
         case "results":
             return <ResultsView />
+        case "announcements":
+            return <AnnouncementManager />
         case "reviews":
             return <AdminReviewApproval />
         case "analytics":

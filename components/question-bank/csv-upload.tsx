@@ -29,7 +29,7 @@ export function CsvUpload({ context, contextLabel, onSaved }: { context: Questio
 
     const upload = async () => {
         if (!file) return
-        if (!context.subjectId) return setMessage({ ok: false, text: "Choose a subject at the top first." })
+        if (!context.subjectId) return setMessage({ ok: false, text: "Choose a subject above first." })
         setBusy(true); setMessage(null)
         const questions = parseQuestionCsv(await file.text())
         if (questions.length === 0) {

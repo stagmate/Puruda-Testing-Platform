@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole, ADMIN_ONLY } from "@/lib/api-auth"
+import { dbErrorResponse } from "@/lib/api-errors"
 
 export async function GET() {
     const auth = await requireRole(ADMIN_ONLY)
@@ -9,14 +10,10 @@ export async function GET() {
     const assignments = await db.teacherAssignment.findMany({
         include: {
             teacher: { select: { name: true, email: true } },
-            batch: {
-                select: {
-                    name: true,
-                    course: { select: { name: true } }
-                }
-            },
-            subject: { select: { name: true } }
-        }
+            batch: { select: { name: true, course: { select: { name: true } } } },
+            subject: { select: { name: true } },
+        },
+        orderBy: [{ teacher: { name: "asc" } }],
     })
     return NextResponse.json(assignments)
 }
@@ -25,24 +22,14 @@ export async function POST(req: Request) {
     const auth = await requireRole(ADMIN_ONLY)
     if (auth.response) return auth.response
 
+    const body = await req.json().catch(() => null)
+    const { teacherId, batchId, subjectId } = body ?? {}
+    if (![teacherId, batchId, subjectId].every(v => typeof v === "string" && v)) {
+        return new NextResponse("Choose a teacher, batch and subject", { status: 400 })
+    }
     try {
-        const { teacherId, batchId, subjectId } = await req.json()
-
-        // Check if exists
-        const existing = await db.teacherAssignment.findFirst({
-            where: { teacherId, batchId, subjectId }
-        })
-
-        if (existing) {
-            return new NextResponse("Assignment already exists", { status: 400 })
-        }
-
-        const assignment = await db.teacherAssignment.create({
-            data: { teacherId, batchId, subjectId }
-        })
-        return NextResponse.json(assignment)
+        return NextResponse.json(await db.teacherAssignment.create({ data: { teacherId, batchId, subjectId } }))
     } catch (error) {
-        console.error(error)
-        return new NextResponse("Error creating assignment", { status: 500 })
+        return dbErrorResponse(error, "teacher assignment", "ASSIGNMENTS_POST", "This teacher is already assigned to that batch and subject")
     }
 }

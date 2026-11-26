@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { CalendarClock, Send, Eye, Award, Lock, EyeOff, Loader2, Printer, Settings2, Trash2 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { CalendarClock, Send, Eye, Award, Lock, EyeOff, Loader2, Printer, Settings2, Trash2, FileSearch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MARKING_PRESETS, describeScheme, parseScheme, presetOf, type MarkingScheme } from "@/lib/marking"
 import { cn } from "@/lib/utils"
+import { TestPreviewDialog } from "@/components/tests/test-preview-dialog"
+import type { StoredQuestion } from "@/components/question-bank/question-form-dialog"
 
 export type ManagedTest = {
     id: string
@@ -94,6 +96,7 @@ export function TestList({ tests, batches, onChanged, canDelete }: { tests: Mana
     const [editing, setEditing] = useState<ManagedTest | null>(null)
     const [deleting, setDeleting] = useState<ManagedTest | null>(null)
     const [releasing, setReleasing] = useState<ManagedTest | null>(null)
+    const [previewing, setPreviewing] = useState<ManagedTest | null>(null)
 
     const patch = async (t: ManagedTest, body: Record<string, unknown>) => {
         setBusyId(t.id)
@@ -108,16 +111,16 @@ export function TestList({ tests, batches, onChanged, canDelete }: { tests: Mana
     if (tests.length === 0) return <p className="rounded-lg border border-dashed py-8 text-center text-sm text-slate-500">No tests yet.</p>
 
     return (
-        <div className="space-y-2">
-            {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+            {error && <p className="col-span-full text-sm text-red-600">{error}</p>}
             {tests.map(t => {
                 const status = testStatus(t)
                 const results = t._count.results ?? 0
                 return (
-                    <div key={t.id} className="rounded-lg border p-3 hover:bg-slate-50">
+                    <div key={t.id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
-                                <p className="font-medium">{t.title}</p>
+                                <p className="text-base font-semibold text-slate-900">{t.title}</p>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
                                     {[t.course?.name, t.batches.map(b => b.name).join(", ") || "All students", `${t._count.questions} Qs`, `${t.duration} min`, results ? `${results} result${results === 1 ? "" : "s"}` : null].filter(Boolean).join(" • ")}
                                 </p>
@@ -145,7 +148,8 @@ export function TestList({ tests, batches, onChanged, canDelete }: { tests: Mana
                                 </Button>
                             </div>
                         )}
-                        <div className="mt-2 flex flex-wrap items-center justify-end gap-1">
+                        <div className="mt-auto flex flex-wrap items-center justify-end gap-1 border-t border-slate-100 pt-3">
+                            <Button variant="outline" size="sm" onClick={() => setPreviewing(t)}><FileSearch className="mr-1.5 h-4 w-4" />Preview</Button>
                             <Button variant={t.isPublished ? "outline" : "default"} size="sm" onClick={() => setReleasing(t)}>
                                 <Send className="mr-1.5 h-4 w-4" />{t.isPublished ? "Batches" : "Release"}
                             </Button>
@@ -180,8 +184,33 @@ export function TestList({ tests, batches, onChanged, canDelete }: { tests: Mana
 
             {editing && <TestSettingsDialog test={editing} onClose={() => setEditing(null)} onSave={body => patch(editing, body)} />}
             {releasing && <ReleaseDialog test={releasing} batches={batches} onClose={() => setReleasing(null)} onSave={body => patch(releasing, body)} />}
+            {previewing && <SavedTestPreview test={previewing} onClose={() => setPreviewing(null)} />}
             {deleting && <DeleteTestDialog test={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); onChanged() }} />}
         </div>
+    )
+}
+
+/** Read-only preview of a saved test's questions. */
+function SavedTestPreview({ test, onClose }: { test: ManagedTest; onClose: () => void }) {
+    const [questions, setQuestions] = useState<StoredQuestion[] | null>(null)
+    const [error, setError] = useState("")
+    useEffect(() => {
+        let live = true
+        fetch(`/api/admin/tests/${test.id}`)
+            .then(r => (r.ok ? r.json() : Promise.reject()))
+            .then(d => { if (live) setQuestions(d.questions ?? []) })
+            .catch(() => { if (live) { setError("Couldn't load the questions"); setQuestions([]) } })
+        return () => { live = false }
+    }, [test.id])
+    return (
+        <TestPreviewDialog
+            open
+            onClose={onClose}
+            loading={questions === null}
+            summary={{ title: test.title, duration: test.duration, batches: test.batches.map(b => b.name), opens: test.startTime, closes: test.endTime, marking: parseScheme(test.markingScheme) }}
+            questions={questions ?? []}
+            footer={error ? <span className="self-center text-sm text-red-700">{error}</span> : undefined}
+        />
     )
 }
 

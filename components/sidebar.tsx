@@ -42,9 +42,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     ]
 
     const isActive = (route: NavRoute) => {
-        const [path] = route.href.split("?")
+        const [path, query] = route.href.split("?")
         if (pathname !== path) return false
-        return route.key === "overview" ? !currentTab || currentTab === "overview" : currentTab === route.key || route.key === "results"
+        // A link with ?tab=… is active on that tab; the plain dashboard link only when no other tab is open.
+        if (query) return currentTab === new URLSearchParams(query).get("tab")
+        return route.key !== "overview" || !currentTab || currentTab === "overview"
     }
 
     return (

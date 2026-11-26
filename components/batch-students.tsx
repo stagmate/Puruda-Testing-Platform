@@ -28,7 +28,13 @@ async function allStudents(): Promise<Student[]> {
 }
 
 /** Pick a batch, see its students, add or remove students in bulk. */
-export function BatchStudents() {
+export function BatchStudents({ batchId: chosenId, onBatchChange, onChanged }: {
+    /** Batch to show; the parent can set it (e.g. from a "Students" button). */
+    batchId?: string
+    onBatchChange?: (id: string) => void
+    /** Called after students are added or removed. */
+    onChanged?: () => void
+} = {}) {
     const [batches, setBatches] = useState<BatchRow[]>([])
     const [students, setStudents] = useState<Student[]>([])
     const [batchId, setBatchId] = useState("")
@@ -63,8 +69,29 @@ export function BatchStudents() {
         setToAdd(new Set())
         setToRemove(new Set())
         setMessage(null)
-        loadMembers(id)
+        // A parent that tracks the batch triggers the load through the effect below.
+        if (onBatchChange) onBatchChange(id)
+        else loadMembers(id)
     }
+
+    // Follow a batch chosen by the parent.
+    const [lastChosen, setLastChosen] = useState<string | undefined>(undefined)
+    if (chosenId !== lastChosen) {
+        setLastChosen(chosenId)
+        if (chosenId && chosenId !== batchId) {
+            setBatchId(chosenId)
+            setToAdd(new Set())
+            setToRemove(new Set())
+            setMessage(null)
+        }
+    }
+    useEffect(() => {
+        if (!chosenId) return
+        fetch(`/api/admin/batches/${chosenId}/students`)
+            .then(r => (r.ok ? r.json() : { students: [] }))
+            .then(b => setMembers(b.students ?? []))
+            .catch(() => setMembers([]))
+    }, [chosenId])
 
     const memberIds = useMemo(() => new Set(members.map(m => m.id)), [members])
     const candidates = students.filter(s => !memberIds.has(s.id) && matches(s, addSearch))
@@ -96,6 +123,7 @@ export function BatchStudents() {
         setToRemove(new Set())
         loadMembers(batchId)
         loadBatches()
+        onChanged?.()
     }
 
     return (

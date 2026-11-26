@@ -1,54 +1,58 @@
 import { NextResponse } from "next/server"
+import type { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { requireRole, STAFF } from "@/lib/api-auth"
+import { isDifficulty, isQuestionType } from "@/lib/question-enums"
+import { pickQuestions } from "@/lib/question-pick"
 
+const MAX = 300
+
+// Pick questions at random from the chosen subjects for staff to review before
+// the test is created. Nothing is saved here.
+// Body: { subjectIds, count, difficulty?, type?, even?, excludeIds? }
 export async function POST(req: Request) {
     const auth = await requireRole(STAFF)
     if (auth.response) return auth.response
 
+    const body = await req.json().catch(() => null)
+    const subjectIds: unknown = body?.subjectIds
+    const count = parseInt(body?.count ?? 20)
+    if (!Number.isFinite(count) || count <= 0 || count > MAX) {
+        return new NextResponse(`Number of questions must be between 1 and ${MAX}`, { status: 400 })
+    }
+    if (!Array.isArray(subjectIds) || subjectIds.length === 0 || subjectIds.some(s => typeof s !== "string")) {
+        return new NextResponse("Choose at least one subject", { status: 400 })
+    }
+    const exclude = Array.isArray(body?.excludeIds) ? body.excludeIds.filter((s: unknown): s is string => typeof s === "string") : []
+
+    const where: Prisma.QuestionWhereInput = { subjectId: { in: subjectIds as string[] } }
+    if (exclude.length) where.id = { notIn: exclude }
+    if (isDifficulty(body?.difficulty)) where.difficulty = body.difficulty
+    if (isQuestionType(body?.type)) where.type = body.type
+
     try {
-        const body = await req.json()
-        const { subjectIds } = body
-        const count = parseInt(body.count ?? 20)
-
-        if (!Number.isFinite(count) || count <= 0) {
-            return new NextResponse("Count must be a positive number", { status: 400 })
-        }
-        if (!Array.isArray(subjectIds) || subjectIds.length === 0) {
-            return new NextResponse("Subject IDs required", { status: 400 })
+        const pool = await db.question.findMany({ where, select: { id: true, subjectId: true } })
+        const picked = pickQuestions(pool, count, subjectIds as string[], body?.even !== false)
+        if (!picked) {
+            return new NextResponse(`Only ${pool.length} matching question${pool.length === 1 ? " is" : "s are"} available, but you asked for ${count}.`, { status: 400 })
         }
 
-        // 1. Fetch eligible questions
-        const questions = await db.question.findMany({
-            where: {
-                subjectId: { in: subjectIds },
-                // Optional: Filter by course if specified, but usually subjects are enough
-                // courseId: courseId 
+        const full = await db.question.findMany({
+            where: { id: { in: picked.map(q => q.id) } },
+            include: {
+                subject: { select: { name: true } },
+                chapter: { select: { name: true } },
+                subtopic: { select: { name: true } },
+                course: { select: { name: true } },
+                batch: { select: { name: true } },
+                _count: { select: { tests: true } },
             },
-            select: { id: true, subjectId: true }
         })
-
-        if (questions.length < count) {
-            return new NextResponse(`Not enough questions. Found ${questions.length}, requested ${count}`, { status: 400 })
-        }
-
-        // 2. Random Selection "AI" Logic
-        // Fisher-Yates shuffle (sorting with a random comparator is biased)
-        const shuffled = [...questions]
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1))
-            ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-        }
-        const selected = shuffled.slice(0, count)
-
-        // 3. Return selected IDs (UI will then submit them to create Test)
-        return NextResponse.json({
-            count: selected.length,
-            questions: selected
-        })
-
+        const byId = new Map(full.map(q => [q.id, q]))
+        const questions = picked.map(q => byId.get(q.id)).filter(Boolean)
+        return NextResponse.json({ count: questions.length, available: pool.length, questions })
     } catch (error) {
-        console.error(error)
-        return new NextResponse("Error generating test", { status: 500 })
+        console.error("[TESTS_GENERATE]", error)
+        return new NextResponse("Couldn't generate questions", { status: 500 })
     }
 }

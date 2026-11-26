@@ -82,7 +82,7 @@ export function PdfImport({ context, contextLabel, onSaved }: {
     }
 
     const save = async () => {
-        if (!context.subjectId) return setError("Choose a subject at the top before saving.")
+        if (!context.subjectId) return setError("Choose a subject above before saving.")
         if (selectedInvalid.length) return setError(`${selectedInvalid.length} selected question(s) still need fixing (marked in red).`)
         setSaving(true); setError("")
         const res = await fetch("/api/admin/questions/bulk", {

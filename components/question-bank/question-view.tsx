@@ -11,11 +11,13 @@ const DIFF_STYLE = {
 } as const
 
 /** Read-only rendering of a question, with the correct answer marked. */
-export function QuestionView({ draft, number, showAnswer = true, showSolution = true }: {
+export function QuestionView({ draft, number, showAnswer = true, showSolution = true, showMeta = true }: {
     draft: QuestionDraft
     number?: string | number
     showAnswer?: boolean
     showSolution?: boolean
+    /** Show the type and difficulty badges (off when the caller shows them itself). */
+    showMeta?: boolean
 }) {
     const options = draft.options
         .map((text, i) => ({ text, image: draft.optionImages[i], letter: "ABCD"[i] }))
@@ -23,12 +25,12 @@ export function QuestionView({ draft, number, showAnswer = true, showSolution = 
 
     return (
         <div className="space-y-3 text-sm">
-            <div className="flex flex-wrap items-center gap-1.5">
+            {showMeta && <div className="flex flex-wrap items-center gap-1.5">
                 <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-700">{TYPE_LABEL[draft.type]}</span>
                 <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", DIFF_STYLE[draft.difficulty])}>{draft.difficulty.toLowerCase()}</span>
-            </div>
+            </div>}
 
-            <p className="leading-relaxed text-slate-900">
+            <p className="text-[15px] leading-relaxed text-slate-900">
                 {number !== undefined && <span className="mr-1.5 font-semibold">{number}.</span>}
                 <RichText text={draft.text} />
             </p>

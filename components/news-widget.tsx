@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Bell, Megaphone } from "lucide-react"
+import { Megaphone } from "lucide-react"
+import { NewBadge } from "@/components/new-badge"
+import { isNewAnnouncement } from "@/lib/announcements"
 
 export function NewsWidget() {
-    const [news, setNews] = useState<any[]>([])
+    const [news, setNews] = useState<{ id: string; title: string; content: string; createdAt: string; startsAt?: string; endsAt?: string | null; author?: { name: string | null } | null }[]>([])
 
     useEffect(() => {
         fetch("/api/announcements")
@@ -46,16 +48,19 @@ export function NewsWidget() {
                         <div className="space-y-4">
                             {news.map((item) => (
                                 <div key={item.id} className="border-b pb-3 last:border-0 last:pb-0">
-                                    <h4 className="font-semibold text-sm mb-1">{item.title}</h4>
+                                    <h4 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+                                        {item.title}
+                                        {isNewAnnouncement({ startsAt: item.startsAt ?? item.createdAt, endsAt: item.endsAt }) && <NewBadge />}
+                                    </h4>
                                     <p className="text-sm text-muted-foreground leading-relaxed">
                                         {item.content}
                                     </p>
                                     <div className="flex justify-between items-center mt-2">
                                         <span className="text-xs text-slate-400">
-                                            {new Date(item.createdAt).toLocaleDateString()}
+                                            {new Date(item.startsAt ?? item.createdAt).toLocaleDateString()}
                                         </span>
                                         <span className="text-xs font-medium text-orange-600">
-                                            {item.author.name}
+                                            {item.author?.name}
                                         </span>
                                     </div>
                                 </div>
