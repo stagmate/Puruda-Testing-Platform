@@ -3,9 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { RichText } from "@/components/rich-text"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardTitle } from "@/components/ui/card"
+import { CardTitle } from "@/components/ui/card"
 import { Loader2, ZoomIn, CheckCircle2, AlertTriangle, Eye, ShieldAlert, Clock, Check, CloudOff, CloudUpload, ChevronLeft, ChevronRight, LayoutGrid, LogOut, X, Eraser } from "lucide-react"
 import { questionStatus, summarize, type QuestionStatus } from "@/lib/test-progress"
+import { ImageViewer } from "@/components/image-viewer"
+import { ResultReview } from "@/components/result-review"
 import { cn } from "@/lib/utils"
 
 interface TestInterfaceProps {
@@ -73,7 +75,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const [paletteOpen, setPaletteOpen] = useState(false)
     const [confirmSubmit, setConfirmSubmit] = useState(false)
     const [exitPrompt, setExitPrompt] = useState(false)
-    const [zoomSrc, setZoomSrc] = useState<string | null>(null)
+    const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null)
 
     // Anti-cheat state
     const [warnings, setWarnings] = useState(0)
@@ -357,30 +359,22 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     if (result) {
         const showScore = typeof result.score === "number" && typeof result.total === "number"
         return (
-            <Card className="text-center py-10 animate-in zoom-in-95 duration-500">
-                <CardContent className="space-y-4">
-                    <div className="flex justify-center mb-4">
-                        <CheckCircle2 className="h-16 w-16 text-green-500" />
-                    </div>
-                    <CardTitle className="text-3xl">Test Submitted!</CardTitle>
-                    <p className="text-muted-foreground">You have successfully completed {test.title}.</p>
-
-                    {showScore ? (
-                        <div className="py-6">
-                            <div className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">
-                                {result.score} / {result.total}
-                            </div>
-                            <p className="text-sm mt-2 text-slate-500">Your Score</p>
-                        </div>
-                    ) : (
-                        <p className="py-6 text-slate-500">Your teacher will publish the results later.</p>
-                    )}
-
-                    <div className="flex gap-4 justify-center">
+            <div className="mx-auto w-full max-w-5xl space-y-5 p-4 sm:p-6">
+                <div className="flex flex-col items-center gap-2 rounded-2xl border bg-white px-4 py-6 text-center shadow-sm animate-in zoom-in-95 duration-500">
+                    <CheckCircle2 className="h-12 w-12 text-green-500" />
+                    <CardTitle className="text-2xl sm:text-3xl">Test submitted!</CardTitle>
+                    <p className="text-muted-foreground">You have completed {test.title}.</p>
+                    {!showScore && <p className="pt-2 text-slate-500">Your teacher will publish the results later.</p>}
+                    <Button variant="outline" className={cn(BIG, "mt-2")} onClick={() => onComplete?.()}>Return to Dashboard</Button>
+                </div>
+                {/* Score summary, then every question with your answer, the correct answer and the solution. */}
+                {showScore && <ResultReview testId={test.id} />}
+                {showScore && (
+                    <div className="flex justify-center pb-6">
                         <Button variant="outline" className={BIG} onClick={() => onComplete?.()}>Return to Dashboard</Button>
                     </div>
-                </CardContent>
-            </Card>
+                )}
+            </div>
         )
     }
 
@@ -391,6 +385,12 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
     const lowTime = timeLeft !== null && timeLeft < 5 * 60 * 1000
     const progress = summarize(test.questions.map(q => q.id), answers, visited)
     const isLast = currentQuestion === test.questions.length - 1
+    // Layout so the question fits on one screen.
+    const hasDiagram = !!question.imageUrl
+    const optionImages = options.some((_, i) => optionImage(question, i))
+    const twoColumnOptions = options.length > 2 && (optionImages || options.every(o => o.length <= 60))
+    const textLength = question.text?.length ?? 0
+    const textSize = textLength > 600 ? "text-base" : textLength > 300 ? "text-lg" : "text-lg sm:text-xl"
 
     // Palette groups: consecutive questions of the same subject (the paper's parts).
     const groups: { subject: string | null; items: number[] }[] = []
@@ -492,92 +492,113 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                     </div>
                 )}
 
-                {/* Question */}
+                {/* Question: laid out to fit the screen without scrolling. With a diagram,
+                    text and diagram sit on the left and the options on the right (large
+                    screens); the diagram scales to the space left and opens full screen on tap. */}
                 <main className="flex min-w-0 flex-1 flex-col">
-                    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
-                        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3 sm:px-6 sm:py-4">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
                             <span className="font-semibold text-slate-900">Question {currentQuestion + 1} of {test.questions.length}</span>
                             {question.subject && <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{question.subject}</span>}
                             <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
                                 {qType === "MULTIPLE" ? "One or more correct" : qType === "INTEGER" ? "Numerical answer" : "Single correct"}
                             </span>
+                            {submitError && <span className="text-sm text-red-600">{submitError}</span>}
+                            {!progress.canSubmit && isLast && (
+                                <span className="text-sm text-amber-700">Open every question before submitting: {progress.notVisited} not visited yet.</span>
+                            )}
                         </div>
 
-                        <div className="rounded-xl border bg-white p-5 shadow-sm sm:p-7">
-                            <div className="mb-5 whitespace-pre-line text-lg font-medium leading-relaxed text-slate-900 sm:text-xl">
-                                <RichText text={question.text} />
-                            </div>
-                            {question.imageUrl && (
-                                <button
-                                    type="button"
-                                    onClick={() => setZoomSrc(question.imageUrl!)}
-                                    className="group relative mb-6 block max-w-full cursor-zoom-in rounded border bg-white"
-                                    aria-label="Enlarge the diagram"
-                                >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={question.imageUrl} alt="Question diagram" className="h-auto max-h-[70vh] w-auto max-w-full rounded object-contain" />
-                                    <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
-                                        <ZoomIn className="h-4 w-4" />Enlarge
-                                    </span>
-                                </button>
-                            )}
-
-                            {qType === "INTEGER" ? (
-                                <label className="block space-y-2">
-                                    <span className="text-sm text-slate-600">Enter your numerical answer</span>
-                                    <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        className="flex h-14 w-full rounded-lg border-2 border-slate-300 bg-background px-4 text-xl focus-visible:border-indigo-500 focus-visible:outline-none"
-                                        value={typeof currentAnswer === "string" ? currentAnswer : ""}
-                                        onChange={e => handleAnswer(e.target.value)}
-                                        placeholder="e.g. 42 or 2.5"
-                                    />
-                                </label>
-                            ) : (
-                                <div className="space-y-2.5" role={qType === "MULTIPLE" ? "group" : "radiogroup"} aria-label="Options">
-                                    {options.map((opt, idx) => {
-                                        const selected = qType === "MULTIPLE"
-                                            ? Array.isArray(currentAnswer) && currentAnswer.includes(idx)
-                                            : currentAnswer === idx
-                                        const img = optionImage(question, idx)
-                                        return (
-                                            // The whole row is the control, edge to edge.
-                                            <button
-                                                key={idx}
-                                                type="button"
-                                                role={qType === "MULTIPLE" ? "checkbox" : "radio"}
-                                                aria-checked={selected}
-                                                onClick={() => (qType === "MULTIPLE" ? handleCheckboxAnswer(idx) : handleAnswer(idx))}
-                                                className={cn(
-                                                    "flex min-h-14 w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
-                                                    selected ? "border-indigo-600 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
-                                                )}
-                                            >
-                                                <span className={cn(
-                                                    "flex h-8 w-8 shrink-0 items-center justify-center text-sm font-bold",
-                                                    qType === "MULTIPLE" ? "rounded-md" : "rounded-full",
-                                                    selected ? "bg-indigo-600 text-white" : "border-2 border-slate-300 text-slate-600"
-                                                )}>
-                                                    {selected && qType === "MULTIPLE" ? <Check className="size-5" /> : String.fromCharCode(65 + idx)}
-                                                </span>
-                                                <span className="min-w-0 flex-1 text-base text-slate-900">
-                                                    <RichText text={opt} />
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    {img && <img src={img} alt="" className="mt-2 h-auto max-h-56 w-auto max-w-full rounded object-contain" />}
-                                                </span>
-                                            </button>
-                                        )
-                                    })}
+                        <div className={cn("flex min-h-0 flex-col gap-4 rounded-xl border bg-white p-4 shadow-sm sm:p-5", hasDiagram && "flex-1 lg:flex-row lg:gap-6")}>
+                            <section className={cn("flex min-h-0 flex-col gap-3", hasDiagram ? "flex-1 lg:w-1/2" : "shrink-0")}>
+                                <div className={cn("shrink-0 whitespace-pre-line font-medium leading-relaxed text-slate-900", textSize)}>
+                                    <RichText text={question.text} />
                                 </div>
-                            )}
+                                {question.imageUrl && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setZoom({ src: question.imageUrl!, alt: `Question ${currentQuestion + 1} diagram` })}
+                                        className="group relative min-h-[140px] flex-1 cursor-zoom-in overflow-hidden rounded-lg border bg-slate-50"
+                                        aria-label="Open the diagram full screen"
+                                    >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={question.imageUrl} alt="Question diagram" className="absolute inset-0 h-full w-full object-contain p-1" />
+                                        <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/65 px-2 py-1 text-xs font-medium text-white">
+                                            <ZoomIn className="h-4 w-4" />Enlarge
+                                        </span>
+                                    </button>
+                                )}
+                            </section>
+
+                            <section className={cn("flex min-h-0 flex-col justify-center", hasDiagram ? "shrink-0 lg:w-1/2" : "")}>
+                                {qType === "INTEGER" ? (
+                                    <label className="block space-y-2">
+                                        <span className="text-sm text-slate-600">Enter your numerical answer</span>
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            className="flex h-14 w-full max-w-md rounded-lg border-2 border-slate-300 bg-background px-4 text-xl focus-visible:border-indigo-500 focus-visible:outline-none"
+                                            value={typeof currentAnswer === "string" ? currentAnswer : ""}
+                                            onChange={e => handleAnswer(e.target.value)}
+                                            placeholder="e.g. 42 or 2.5"
+                                        />
+                                    </label>
+                                ) : (
+                                    <div className={cn("grid gap-2", twoColumnOptions && "sm:grid-cols-2")} role={qType === "MULTIPLE" ? "group" : "radiogroup"} aria-label="Options">
+                                        {options.map((opt, idx) => {
+                                            const selected = qType === "MULTIPLE"
+                                                ? Array.isArray(currentAnswer) && currentAnswer.includes(idx)
+                                                : currentAnswer === idx
+                                            const img = optionImage(question, idx)
+                                            const letter = String.fromCharCode(65 + idx)
+                                            const choose = () => (qType === "MULTIPLE" ? handleCheckboxAnswer(idx) : handleAnswer(idx))
+                                            return (
+                                                // The whole row is the control, edge to edge.
+                                                <div
+                                                    key={idx}
+                                                    role={qType === "MULTIPLE" ? "checkbox" : "radio"}
+                                                    aria-checked={selected}
+                                                    tabIndex={0}
+                                                    onClick={choose}
+                                                    onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); choose() } }}
+                                                    className={cn(
+                                                        "flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 sm:px-4",
+                                                        selected ? "border-indigo-600 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
+                                                    )}
+                                                >
+                                                    <span className={cn(
+                                                        "flex h-8 w-8 shrink-0 items-center justify-center text-sm font-bold",
+                                                        qType === "MULTIPLE" ? "rounded-md" : "rounded-full",
+                                                        selected ? "bg-indigo-600 text-white" : "border-2 border-slate-300 text-slate-600"
+                                                    )}>
+                                                        {selected && qType === "MULTIPLE" ? <Check className="size-5" /> : letter}
+                                                    </span>
+                                                    <span className="min-w-0 flex-1 text-base text-slate-900">
+                                                        <RichText text={opt} />
+                                                        {img && (
+                                                            <span className="relative mt-1 block w-fit">
+                                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                <img src={img} alt={`Option ${letter}`} className="h-auto max-h-20 w-auto max-w-full rounded object-contain sm:max-h-24" />
+                                                                <span
+                                                                    role="button"
+                                                                    tabIndex={0}
+                                                                    aria-label={`Open option ${letter} image full screen`}
+                                                                    onClick={e => { e.stopPropagation(); setZoom({ src: img, alt: `Option ${letter}` }) }}
+                                                                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setZoom({ src: img, alt: `Option ${letter}` }) } }}
+                                                                    className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[11px] font-medium text-white hover:bg-black/80"
+                                                                >
+                                                                    <ZoomIn className="h-3.5 w-3.5" />Enlarge
+                                                                </span>
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </section>
                         </div>
-                        {submitError && <p className="mt-4 text-sm text-red-600">{submitError}</p>}
-                        {!progress.canSubmit && isLast && (
-                            <p className="mt-4 text-sm text-amber-700">
-                                Open every question before submitting: {progress.notVisited} not visited yet. Use the question list to find them.
-                            </p>
-                        )}
                     </div>
 
                     {/* Navigation */}
@@ -602,18 +623,7 @@ export function TestInterface({ testId, onComplete }: TestInterfaceProps) {
                 </main>
             </div>
 
-            {zoomSrc && (
-                <div className="fixed inset-0 z-[60] flex flex-col bg-black/85" role="dialog" aria-modal="true" aria-label="Diagram" onClick={() => setZoomSrc(null)}>
-                    <div className="flex justify-end p-2">
-                        <Button variant="secondary" className={BIG} onClick={() => setZoomSrc(null)}><X className="size-5" />Close</Button>
-                    </div>
-                    <div className="flex flex-1 items-start justify-center overflow-auto p-4" onClick={e => e.stopPropagation()}>
-                        {/* Full size; scroll if it's bigger than the screen */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={zoomSrc} alt="Diagram, enlarged" className="h-auto max-w-none rounded bg-white" style={{ minWidth: "min(100%, 900px)" }} />
-                    </div>
-                </div>
-            )}
+            {zoom && <ImageViewer src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
 
             {/* Prompts are drawn inside the test so they stay visible in fullscreen. */}
             {confirmSubmit && (
