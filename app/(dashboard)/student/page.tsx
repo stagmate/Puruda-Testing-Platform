@@ -137,7 +137,7 @@ function TestCard({ test, onStart }: { test: StudentTestSummary; onStart: () => 
                 {!notYet && test.endTime && !test.submitted && <p className="mt-1 text-xs text-slate-500">{closed ? "Closed" : "Closes"} {when(test.endTime)}</p>}
             </div>
             {state === "submitted" ? (
-                <Link href="/student/results" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:underline">
+                <Link href={`/student/results/${test.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:underline">
                     <CheckCircle2 className="h-4 w-4" />View result
                 </Link>
             ) : (

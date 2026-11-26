@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Award, ChevronDown, FileBarChart, Hourglass, Printer, Trophy } from "lucide-react"
+import { Award, ChevronDown, FileBarChart, Hourglass, ListChecks, Printer, Trophy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { StudentReviewsList } from "@/components/student-reviews-list"
 import { cn } from "@/lib/utils"
@@ -121,6 +121,11 @@ function ResultCard({ result: r }: { result: Result }) {
                 </div>
                 <ChevronDown className={cn("h-5 w-5 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
             </button>
+            <div className="border-t px-4 py-2.5">
+                <Link href={`/student/results/${r.testId}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline">
+                    <ListChecks className="h-4 w-4" />Question-wise result, answers &amp; solutions →
+                </Link>
+            </div>
             {open && r.subjects && (
                 <div className="overflow-x-auto border-t px-4 pb-4 pt-3">
                     <table className="w-full min-w-[30rem] text-sm">
