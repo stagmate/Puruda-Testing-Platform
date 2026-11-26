@@ -213,7 +213,14 @@ model Announcement {
   authorId  String
   author    User     @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
   active    Boolean  @default(true)
+  // Shown on the site from startsAt (can be in the future) until endsAt.
+  // After endsAt it is hidden from everyone except staff managing announcements.
+  startsAt  DateTime @default(now())
+  endsAt    DateTime?
+
+  @@index([startsAt, endsAt])
 }
 
 model PerformanceReview {

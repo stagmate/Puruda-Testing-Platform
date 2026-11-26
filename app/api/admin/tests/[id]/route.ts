@@ -2,8 +2,34 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { requireRole, STAFF, ADMIN_ONLY } from "@/lib/api-auth"
 import { gradeWithScheme, normalizeScheme } from "@/lib/marking"
+import { orderTestQuestions } from "@/lib/test-order"
 
 type Params = { params: Promise<{ id: string }> }
+
+// One test with its questions in order (for previewing it)
+export async function GET(_req: Request, { params }: Params) {
+    const auth = await requireRole(STAFF)
+    if (auth.response) return auth.response
+    const { id } = await params
+    const test = await db.test.findUnique({
+        where: { id },
+        include: {
+            batches: { select: { id: true, name: true } },
+            course: { select: { name: true } },
+            questions: {
+                include: {
+                    subject: { select: { name: true } },
+                    chapter: { select: { name: true } },
+                    subtopic: { select: { name: true } },
+                    course: { select: { name: true } },
+                    batch: { select: { name: true } },
+                },
+            },
+        },
+    })
+    if (!test) return new NextResponse("Test not found", { status: 404 })
+    return NextResponse.json({ ...test, questions: orderTestQuestions(test.questions, test.questionOrder) })
+}
 
 const parseTime = (v: unknown): Date | null | undefined => {
     if (v === undefined) return undefined
