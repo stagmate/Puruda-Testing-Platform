@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { formatPhone } from "@/lib/phone"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 type User = {
     id: string
     name: string
-    email: string
+    email: string | null
+    phoneAccount?: { phone: string } | null
     role: string
     createdAt: string
 }
@@ -116,7 +118,7 @@ export function UserManagement() {
                     <li key={user.id} className="flex items-center gap-3 p-3">
                         <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">{user.name || "-"}</p>
-                            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                            <p className="truncate text-xs text-muted-foreground">{user.email ?? formatPhone(user.phoneAccount?.phone)}</p>
                             <span className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${roleBadge(user.role)}`}>{user.role}</span>
                         </div>
                         <Button variant="ghost" size="sm" onClick={() => handleDelete(user.id)} className="shrink-0 text-red-600 hover:text-red-700">Delete</Button>
@@ -138,7 +140,7 @@ export function UserManagement() {
                         {users.map(user => (
                             <TableRow key={user.id}>
                                 <TableCell>{user.name || "-"}</TableCell>
-                                <TableCell>{user.email}</TableCell>
+                                <TableCell>{user.email ?? (user.phoneAccount ? `${formatPhone(user.phoneAccount.phone)} (phone)` : "—")}</TableCell>
                                 <TableCell>
                                     <span className={`px-2 py-1 rounded text-xs font-bold ${roleBadge(user.role)}`}>
                                         {user.role}
@@ -167,5 +169,6 @@ export function UserManagement() {
 function roleBadge(role: string) {
     if (role === "ADMIN") return "bg-red-100 text-red-800"
     if (role === "TEACHER") return "bg-blue-100 text-blue-800"
+    if (role === "LEARNER") return "bg-orange-100 text-orange-800"
     return "bg-green-100 text-green-800"
 }

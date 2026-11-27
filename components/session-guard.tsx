@@ -26,7 +26,9 @@ const storage = {
 export async function signOutTo(reason?: string) {
     storage.clear()
     try { await signOut({ redirect: false }) } catch { /* already signed out */ }
-    window.location.replace(reason ? `/login?reason=${encodeURIComponent(reason)}` : "/login")
+    // Free PYQ learners sign in with their phone, on their own login page.
+    const page = window.location.pathname.startsWith("/practice") ? "/pyq/login" : "/login"
+    window.location.replace(reason ? `${page}?reason=${encodeURIComponent(reason)}` : page)
 }
 
 export function SessionGuard({ children }: { children: React.ReactNode }) {

@@ -6,7 +6,7 @@ import { signOutTo } from "@/components/session-guard"
 import { cn } from "@/lib/utils"
 import { BrandMark } from "@/components/brand"
 import { ADMIN_SECTIONS, adminSectionHref } from "@/lib/admin-sections"
-import { LayoutDashboard, BookOpen, FileQuestion, PenTool, LogOut, type LucideIcon } from "lucide-react"
+import { LayoutDashboard, BookOpen, FileQuestion, PenTool, LogOut, History, type LucideIcon } from "lucide-react"
 
 type NavRoute = { key: string; label: string; icon: LucideIcon; href: string; color: string }
 
@@ -25,6 +25,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     const isAdmin = pathname.startsWith("/admin")
     const isTeacher = pathname.startsWith("/teacher")
     const isStudent = pathname.startsWith("/student")
+    const isLearner = pathname.startsWith("/practice")
 
     const routes: NavRoute[] = [
         ...(isAdmin ? ADMIN_SECTIONS.map(s => ({
@@ -38,6 +39,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         ...(isStudent ? [
             { key: "overview", label: "Dashboard", icon: LayoutDashboard, href: "/student", color: "text-sky-400" },
             { key: "results", label: "Results & Reports", icon: FileQuestion, href: "/student/results", color: "text-emerald-400" },
+        ] : []),
+        ...(isLearner ? [
+            { key: "overview", label: "PYQ Practice", icon: LayoutDashboard, href: "/practice", color: "text-sky-400" },
+            { key: "attempts", label: "My attempts", icon: History, href: "/practice/attempts", color: "text-emerald-400" },
         ] : []),
     ]
 

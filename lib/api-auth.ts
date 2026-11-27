@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { authOptions } from "@/lib/auth"
 import { checkSession } from "@/lib/session-store"
 
-export const ROLES = ["ADMIN", "TEACHER", "STUDENT"] as const
+export const ROLES = ["ADMIN", "TEACHER", "STUDENT", "LEARNER"] as const
 export type Role = (typeof ROLES)[number]
 
 export type SessionUser = {
@@ -52,3 +52,6 @@ export async function requireRole(roles: readonly Role[] = []): Promise<AuthResu
 
 export const STAFF: readonly Role[] = ["ADMIN", "TEACHER"]
 export const ADMIN_ONLY: readonly Role[] = ["ADMIN"]
+
+/** Free PYQ practice accounts (phone sign-up). Admins may look around too. */
+export const LEARNER_ONLY: readonly Role[] = ["LEARNER", "ADMIN"]

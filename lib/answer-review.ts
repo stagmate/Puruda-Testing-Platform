@@ -40,6 +40,8 @@ export type ReviewItem = {
     correct?: number[]
     correctText?: string
     solution?: string | null
+    /** Seconds spent on the question, when tracked (free PYQ practice). */
+    seconds?: number
 }
 
 function chosenIndexes(answer: unknown): number[] | null {

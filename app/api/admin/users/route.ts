@@ -23,7 +23,8 @@ export async function GET(req: Request) {
     if (search) {
         where.OR = [
             { name: { contains: search, mode: "insensitive" } },
-            { email: { contains: search, mode: "insensitive" } }
+            { email: { contains: search, mode: "insensitive" } },
+            { phoneAccount: { phone: { contains: search.replace(/\D/g, "") || search } } }
         ]
     }
     if (role) {
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
             where,
             skip,
             take: limit,
-            select: { id: true, name: true, email: true, role: true, createdAt: true },
+            select: { id: true, name: true, email: true, role: true, createdAt: true, phoneAccount: { select: { phone: true } } },
             orderBy: { createdAt: 'desc' }
         }),
         db.user.count({ where })
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
                 role: role ?? "STUDENT",
             },
             // Never send the password hash back to the browser.
-            select: { id: true, name: true, email: true, role: true, createdAt: true }
+            select: { id: true, name: true, email: true, role: true, createdAt: true, phoneAccount: { select: { phone: true } } }
         })
 
         return NextResponse.json(user)

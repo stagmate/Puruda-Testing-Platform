@@ -9,6 +9,7 @@ import { TestCreation } from "@/components/test-creation"
 import { Leaderboard } from "@/components/leaderboard"
 import { StudentPerformanceExplorer } from "@/components/analytics/student-performance-explorer"
 import { AnnouncementManager } from "@/components/admin/announcement-manager"
+import { PyqPapers } from "@/components/admin/pyq-papers"
 import { AdminReviewApproval } from "@/components/admin-review-approval"
 import { AdminOverview } from "@/components/admin/admin-overview"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -50,6 +51,8 @@ function SectionContent({ sectionKey }: { sectionKey: string }) {
             return <TestCreation />
         case "results":
             return <ResultsView />
+        case "pyq":
+            return <PyqPapers />
         case "announcements":
             return <AnnouncementManager />
         case "reviews":
