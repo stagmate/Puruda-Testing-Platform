@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2, XCircle, MinusCircle, CircleDot, Lightbulb, Lock, Loader2, ZoomIn } from "lucide-react"
+import { CheckCircle2, XCircle, MinusCircle, CircleDot, Lightbulb, Lock, Loader2, ZoomIn, Clock } from "lucide-react"
+import { formatDuration } from "@/lib/pyq"
 import { RichText } from "@/components/rich-text"
 import { ImageViewer } from "@/components/image-viewer"
 import type { ReviewItem, ReviewStatus } from "@/lib/answer-review"
@@ -141,6 +142,7 @@ function ReviewCard({ q, onZoom }: { q: ReviewItem; onZoom: (src: string, alt: s
                 <span className="rounded-md bg-slate-800 px-2 py-0.5 text-xs font-bold text-white">Q{q.number}</span>
                 {q.subject && <span className="text-sm font-medium text-slate-700">{q.subject}{q.chapter ? <span className="text-slate-400"> › {q.chapter}</span> : null}</span>}
                 <span className="ml-auto flex items-center gap-2">
+                    {q.seconds !== undefined && <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Clock className="h-3.5 w-3.5" />{formatDuration(q.seconds)}</span>}
                     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset", S.chip)}><S.icon className="h-3.5 w-3.5" />{S.label}</span>
                     <span className={cn("text-sm font-bold tabular-nums", q.marks > 0 ? "text-emerald-700" : q.marks < 0 ? "text-red-700" : "text-slate-500")}>
                         {signed(q.marks)} <span className="font-normal text-slate-400">/ {q.maxMarks}</span>

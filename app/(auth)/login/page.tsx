@@ -70,7 +70,7 @@ function LoginForm() {
             const role = session.user.role
 
             // 3. Redirect based on role
-            const home = role === "ADMIN" ? "/admin" : role === "TEACHER" ? "/teacher" : role === "STUDENT" ? "/student" : "/"
+            const home = role === "ADMIN" ? "/admin" : role === "TEACHER" ? "/teacher" : role === "STUDENT" ? "/student" : role === "LEARNER" ? "/practice" : "/"
             router.replace(home)
 
             router.refresh()

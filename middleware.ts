@@ -8,7 +8,8 @@ export default withAuth(
 
         // Not authenticated
         if (!token) {
-            return NextResponse.redirect(new URL("/login", req.url))
+            // Free PYQ learners sign in with their phone; everyone else with email.
+            return NextResponse.redirect(new URL(path.startsWith("/practice") ? "/pyq/login" : "/login", req.url))
         }
 
         // Role-based protection: Strict checks
@@ -21,6 +22,9 @@ export default withAuth(
         if (path.startsWith("/print") && token.role !== "ADMIN" && token.role !== "TEACHER") {
             return NextResponse.redirect(new URL("/unauthorized", req.url))
         }
+        if (path.startsWith("/practice") && token.role !== "LEARNER" && token.role !== "ADMIN") {
+            return NextResponse.redirect(new URL("/unauthorized", req.url))
+        }
         if (path.startsWith("/student") && token.role !== "STUDENT") {
             // Optional: Allow admins to view student pages, else strict
             if (token.role === "ADMIN") return null
@@ -31,7 +35,9 @@ export default withAuth(
     },
     {
         callbacks: {
-            authorized: ({ token }) => !!token,
+            // Let signed-out visitors to /practice through to the function above,
+            // which sends them to the phone login instead of the email one.
+            authorized: ({ token, req }) => !!token || req.nextUrl.pathname.startsWith("/practice"),
         },
         secret: process.env.NEXTAUTH_SECRET,
     }
@@ -43,5 +49,6 @@ export const config = {
         "/teacher/:path*",
         "/student/:path*",
         "/print/:path*",
+        "/practice/:path*",
     ]
 }

@@ -9,10 +9,13 @@ datasource db {
 
 model User {
   id        String   @id @default(uuid())
-  email     String   @unique
+  // Staff and institute students sign in with email; free PYQ learners sign up
+  // with their phone (verified by OTP) and have no email.
+  email     String?  @unique
+  phoneAccount PhoneAccount?
   name      String?
   password  String
-  role      String   @default("STUDENT") // ADMIN, TEACHER, STUDENT
+  role      String   @default("STUDENT") // ADMIN, TEACHER, STUDENT, LEARNER (free PYQ practice)
   createdAt DateTime @default(now())
   
   // Student Relations
@@ -20,6 +23,7 @@ model User {
   results   TestResult[]
   attempts  TestAttempt[]
   sessions  UserSession[]
+  practiceAttempts PracticeAttempt[]
 
   // Teacher Relations
   assignments TeacherAssignment[]
@@ -122,6 +126,12 @@ model Question {
   hasDiagram    Boolean @default(false) 
 
   tests     Test[]   @relation("TestQuestions")
+
+  // Previous-year paper this question appeared in (free PYQ practice).
+  pyqPaperId String?
+  pyqPaper   PyqPaper? @relation(fields: [pyqPaperId], references: [id], onDelete: SetNull)
+
+  @@index([pyqPaperId])
 }
 
 model Chapter {
@@ -281,4 +291,76 @@ model LoginAttempt {
 
   @@index([email, createdAt])
   @@index([ipAddress, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Free PYQ practice (phone sign-up)
+
+// A verified phone number used to sign in (free PYQ learners). Its own table so
+// the unique phone key needs no change to the existing User table.
+model PhoneAccount {
+  phone      String   @id // E.164, e.g. +919876543210
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifiedAt DateTime @default(now())
+}
+
+// One-time codes sent by SMS to verify a phone number. Only a hash is stored.
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  purpose    String    // SIGNUP or LOGIN
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+// A previous-year paper, e.g. JEE Main 2025, 22 Jan Shift 1. Its questions
+// live in the question bank (Question.pyqPaperId).
+model PyqPaper {
+  id            String     @id @default(cuid())
+  exam          String     // e.g. "JEE Main"
+  year          Int
+  session       String     @default("") // e.g. "22 Jan 2025, Shift 1"
+  title         String
+  duration      Int        @default(180) // minutes for a full-paper mock
+  markingScheme String?    // JSON, see lib/marking.ts
+  questionOrder String?    // JSON array of question ids
+  isPublished   Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  questions     Question[]
+  attempts      PracticeAttempt[]
+
+  @@index([exam, year])
+}
+
+// A learner's practice session: a full paper or a chapter-wise set, untimed
+// (PRACTICE: check each answer as you go) or timed (TEST: exam-style).
+model PracticeAttempt {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind          String    // PAPER or CHAPTER
+  mode          String    // PRACTICE or TEST
+  title         String
+  paperId       String?
+  paper         PyqPaper? @relation(fields: [paperId], references: [id], onDelete: SetNull)
+  questionIds   String    // JSON array, in order
+  duration      Int?      // minutes (TEST mode)
+  markingScheme String
+  answers       String    @default("{}") // JSON: question id -> answer
+  checked       String    @default("[]") // JSON: question ids checked in PRACTICE mode (locked)
+  timeSpent     String    @default("{}") // JSON: question id -> seconds
+  startedAt     DateTime  @default(now())
+  submittedAt   DateTime?
+  score         Int?
+  total         Int?
+
+  @@index([userId, startedAt])
 }

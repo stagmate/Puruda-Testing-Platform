@@ -1,5 +1,5 @@
 import {
-    LayoutDashboard, Users, GraduationCap, BookOpen, PenTool, Trophy, ClipboardCheck, Sparkles, Megaphone,
+    LayoutDashboard, Users, GraduationCap, BookOpen, PenTool, Trophy, ClipboardCheck, Sparkles, Megaphone, FileStack,
     type LucideIcon,
 } from "lucide-react"
 
@@ -20,6 +20,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     { key: "courses", label: "Courses & Batches", description: "Courses, batches, subjects and enrolments", icon: GraduationCap, color: "text-pink-400" },
     { key: "questions", label: "Question Bank", description: "Create, import and organise questions", icon: BookOpen, color: "text-orange-400" },
     { key: "tests", label: "Tests", description: "Build, schedule and publish tests", icon: PenTool, color: "text-emerald-400" },
+    { key: "pyq", label: "PYQ Papers", description: "Free previous-year mock tests for phone sign-ups", icon: FileStack, color: "text-lime-400" },
     { key: "results", label: "Results & Rankings", description: "Leaderboards for each test", icon: Trophy, color: "text-amber-400" },
     { key: "announcements", label: "Announcements", description: "Schedule notices for students and staff", icon: Megaphone, color: "text-orange-400" },
     { key: "reviews", label: "Approvals", description: "Approve or reject teacher feedback", icon: ClipboardCheck, color: "text-rose-400" },

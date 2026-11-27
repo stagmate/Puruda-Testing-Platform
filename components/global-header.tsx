@@ -25,6 +25,9 @@ export function GlobalHeader() {
 
                 {/* Desktop Nav Items */}
                 <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-600">
+                    <Link href="/pyq" className="flex items-center gap-1.5 font-bold text-orange-600 transition-colors hover:text-orange-700">
+                        Free JEE PYQs
+                    </Link>
                     <a href="/#solutions" className="hover:text-indigo-600 transition-colors">
                         Solutions
                     </a>
@@ -78,6 +81,9 @@ export function GlobalHeader() {
             {mobileOpen && (
                 <div className="lg:hidden bg-white border-b border-slate-200 px-6 py-5 space-y-4 shadow-xl animate-in slide-in-from-top-2">
                     <div className="flex flex-col space-y-3 font-semibold text-sm text-slate-700">
+                        <Link href="/pyq" onClick={() => setMobileOpen(false)} className="py-1 font-bold text-orange-600">
+                            Free JEE PYQ mock tests
+                        </Link>
                         <a
                             href="/#solutions"
                             onClick={() => setMobileOpen(false)}
