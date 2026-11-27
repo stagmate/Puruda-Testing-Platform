@@ -13,7 +13,7 @@ export function Chatbot() {
     const [isOpen, setIsOpen] = useState(false)
     const [input, setInput] = useState("")
     const [messages, setMessages] = useState<Message[]>([
-        { role: "model", text: "Hi! I'm the Rankify.me AI Assistant. Ask me anything about creating tests or managing students!" }
+        { role: "model", text: "Hi! I'm the IT Neet Prep AI Assistant. Ask me anything about creating tests or managing students!" }
     ])
     const [isLoading, setIsLoading] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -67,7 +67,7 @@ export function Chatbot() {
                         <Card className="border-primary/20 bg-background/95 backdrop-blur">
                             <CardHeader className="p-4 border-b flex flex-row justify-between items-center bg-primary text-primary-foreground rounded-t-lg">
                                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                                    <MessageCircle className="w-4 h-4" /> Rankify.me AI Support
+                                    <MessageCircle className="w-4 h-4" /> IT Neet Prep AI Support
                                 </CardTitle>
                                 <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground hover:bg-primary/80" onClick={() => setIsOpen(false)}>
                                     <X className="w-4 h-4" />

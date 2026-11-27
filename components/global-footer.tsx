@@ -66,7 +66,7 @@ export function GlobalFooter() {
 
                 <div className="pt-12 mt-12 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
                     <div>
-                        © {new Date().getFullYear()} Rankify.me. All rights reserved.
+                        © {new Date().getFullYear()} IT Neet Prep. All rights reserved.
                     </div>
                     <div className="flex items-center gap-6">
                         <a href="#faq" className="hover:text-slate-300">Privacy & Data Security</a>

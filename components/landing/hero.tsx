@@ -103,7 +103,7 @@ export function Hero() {
                                     </div>
                                     <div>
                                         <div className="font-bold text-sm sm:text-base text-white">
-                                            Rankify.me Test Console
+                                            IT Neet Prep Test Console
                                         </div>
                                         <div className="text-xs text-slate-400">
                                             Active Test: All-India Physics Grand Mock • Super-30 Batch
