@@ -65,7 +65,7 @@ export function DemoRequestDialog({ children, defaultTier }: DemoRequestDialogPr
                                 Institutional Trial & Licensing
                             </div>
                             <DialogTitle className="text-2xl font-bold text-slate-900">
-                                Experience Rankify.me for Your Campus
+                                Experience IT Neet Prep for Your Campus
                             </DialogTitle>
                             <DialogDescription className="text-slate-500 text-sm">
                                 Get a custom 14-day evaluation environment with bulk question imports, anti-cheat proctoring, and priority institutional support.

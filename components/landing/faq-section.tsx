@@ -9,15 +9,15 @@ export function FaqSection() {
     const faqs = [
         {
             q: "How does the institutional license subscription work?",
-            a: "Our licensing model is tailored for institutions (coaching centers, schools, colleges) with transparent fixed tiers or custom campus-wide quotas. Unlike legacy software that charges per test taken, Rankify.me allows unlimited tests and attempts within your enrolled student quota. Annual plans receive a 20% institutional discount."
+            a: "Our licensing model is tailored for institutions (coaching centers, schools, colleges) with transparent fixed tiers or custom campus-wide quotas. Unlike legacy software that charges per test taken, IT Neet Prep allows unlimited tests and attempts within your enrolled student quota. Annual plans receive a 20% institutional discount."
         },
         {
             q: "Can we import our existing questions from CSV or PDF files?",
-            a: "Yes! Rankify.me includes a high-speed bulk ingestion engine. You can upload questions in bulk using standard CSV spreadsheets or PDF question papers. The system automatically extracts question statements, choices (A, B, C, D), answer keys, LaTeX math notation, and diagram attachments."
+            a: "Yes! IT Neet Prep includes a high-speed bulk ingestion engine. You can upload questions in bulk using standard CSV spreadsheets or PDF question papers. The system automatically extracts question statements, choices (A, B, C, D), answer keys, LaTeX math notation, and diagram attachments."
         },
         {
             q: "How does the Anti-Cheat Proctoring prevent student cheating?",
-            a: "Rankify.me operates an in-browser secure sandbox. When a student starts an exam, fullscreen mode is strictly enforced. The platform immediately logs window defocus, tab switching, and copy-paste attempts. Administrators can configure maximum allowable warnings before a test is automatically locked or submitted."
+            a: "IT Neet Prep operates an in-browser secure sandbox. When a student starts an exam, fullscreen mode is strictly enforced. The platform immediately logs window defocus, tab switching, and copy-paste attempts. Administrators can configure maximum allowable warnings before a test is automatically locked or submitted."
         },
         {
             q: "Can we schedule tests for specific batches with strict start/end times?",
@@ -25,11 +25,11 @@ export function FaqSection() {
         },
         {
             q: "Do you support offline physical exams if our campus lacks enough computers?",
-            a: "Absolutely. Rankify.me features a dedicated Printable Test Mode. With one click, teachers can generate a clean, publication-ready PDF question paper formatted for print, accompanied by a separate instructor answer key and OMR evaluation sheet."
+            a: "Absolutely. IT Neet Prep features a dedicated Printable Test Mode. With one click, teachers can generate a clean, publication-ready PDF question paper formatted for print, accompanied by a separate instructor answer key and OMR evaluation sheet."
         },
         {
             q: "Can teachers and faculty members have delegated access without full admin rights?",
-            a: "Yes. Rankify.me includes a multi-tiered role architecture: Admins manage institute courses, subjects, and licenses; Teachers are assigned specific batches and subjects to upload questions, create homework tests, and conduct performance reviews; Students only see their enrolled tests and personal progress cards."
+            a: "Yes. IT Neet Prep includes a multi-tiered role architecture: Admins manage institute courses, subjects, and licenses; Teachers are assigned specific batches and subjects to upload questions, create homework tests, and conduct performance reviews; Students only see their enrolled tests and personal progress cards."
         }
     ]
 
@@ -44,7 +44,7 @@ export function FaqSection() {
                         Everything You Need to Know About Licensing & Setup
                     </h2>
                     <p className="text-slate-600 text-sm sm:text-base">
-                        Have a question about deploying Rankify.me at your campus? Here are the most common answers.
+                        Have a question about deploying IT Neet Prep at your campus? Here are the most common answers.
                     </p>
                 </div>
 

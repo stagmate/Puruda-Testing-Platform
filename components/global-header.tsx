@@ -19,7 +19,7 @@ export function GlobalHeader() {
         <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-[100] h-16 sm:h-20 transition-all">
             <div className="max-w-6xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
                 {/* Brand Logo */}
-                <Link href="/" className="flex items-center hover:opacity-90 transition-opacity" aria-label="Rankify.me home">
+                <Link href="/" className="flex items-center hover:opacity-90 transition-opacity" aria-label="IT Neet Prep home">
                     <BrandLogo className="h-9 sm:h-11" priority />
                 </Link>
 

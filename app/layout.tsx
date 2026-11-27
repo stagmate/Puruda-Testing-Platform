@@ -6,8 +6,8 @@ import { Providers } from "@/components/providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Rankify.me",
-  description: "Rankify.me: online tests, JEE mock tests, results and rankings",
+  title: "IT Neet Prep",
+  description: "IT Neet Prep: online tests, JEE mock tests, results and rankings",
 };
 
 import { Chatbot } from "@/components/chatbot"

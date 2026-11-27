@@ -5,7 +5,7 @@ import { Star, Quote } from "lucide-react"
 export function Testimonials() {
     const reviews = [
         {
-            quote: "Rankify.me completely transformed our JEE Mains & Advanced test series. The instant ranking with tie-breaking based on time spent created healthy competitive urgency among our students. Our batch results jumped 35% this year.",
+            quote: "IT Neet Prep completely transformed our JEE Mains & Advanced test series. The instant ranking with tie-breaking based on time spent created healthy competitive urgency among our students. Our batch results jumped 35% this year.",
             author: "Dr. K. S. Ramanathan",
             title: "Director of Academics",
             institute: "Apex IIT-JEE Coaching Academy, Kota",
@@ -41,7 +41,7 @@ export function Testimonials() {
                         Trusted by Leading Educators & Academic Directors
                     </h2>
                     <p className="text-slate-600 text-sm sm:text-base">
-                        Here is how top coaching centers, schools, and colleges run flawless testing programs with Rankify.me.
+                        Here is how top coaching centers, schools, and colleges run flawless testing programs with IT Neet Prep.
                     </p>
                 </div>
 

@@ -86,7 +86,7 @@ function LoginForm() {
         <div className="flex min-h-screen items-center justify-center p-4 bg-slate-50">
             <Card className="w-full max-w-sm shadow-xl">
                 <CardHeader>
-                    <CardTitle className="flex justify-center"><BrandLogo className="h-12" priority /><span className="sr-only">Rankify.me</span></CardTitle>
+                    <CardTitle className="flex justify-center"><BrandLogo className="h-12" priority /><span className="sr-only">IT Neet Prep</span></CardTitle>
                     <CardDescription className="text-center">Sign in to your account</CardDescription>
                 </CardHeader>
                 <CardContent>
